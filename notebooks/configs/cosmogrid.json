@@ -1,0 +1,14 @@
+{
+    "hidden_size": 32,
+    "num_labels": 2,
+    "projected_input_scale": 16,
+    "num_heads": 1,
+    "num_masks_sample": 20,
+    "num_masks_max": 200,
+    "image_size": 66,
+    "num_channels": 1,
+    "attn_patch_size": 6,
+    "finetune_layers": [
+        "fc4"
+    ]
+}

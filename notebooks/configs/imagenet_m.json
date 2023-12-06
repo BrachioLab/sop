@@ -1,0 +1,10 @@
+{
+  "architectures": [
+    "SOPImageCls"
+  ],
+  "attn_patch_size": 16,
+  "num_heads": 1,
+  "num_masks_sample": 20,
+  "num_masks_max": 200,
+  "finetune_layers": ["model.classifier"]
+}
