@@ -11,7 +11,7 @@ from transformers import AutoImageProcessor, AutoModelForImageClassification, Au
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 from pathlib import Path
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, Dataset
 import sys
 sys.path.append('lib/exlib/src')
 # sys.path.append('../lib/pytorch-grad-cam')
@@ -27,6 +27,7 @@ from exlib.explainers import GradCAMImageCls
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
+from PIL import Image
 
 
 from collections import namedtuple
@@ -54,6 +55,36 @@ class WrappedModel(nn.Module):
         outputs = self.model(inputs, output_hidden_states=True)
         return outputs.logits
     
+
+class ImageFolderSubDataset(Dataset):
+    def __init__(self, data_dir, transform=None, num_data=-1):
+        self.data_dir = data_dir
+        self.transform = transform
+        self.image_paths = []
+        self.labels = []
+        
+        for label in sorted(os.listdir(data_dir)):
+            for i, image_path in enumerate(sorted(os.listdir(os.path.join(data_dir, label)))):
+                if num_data != -1 and i >= num_data:
+                    break
+                self.image_paths.append(os.path.join(data_dir, label, image_path))
+                self.labels.append(label)
+        print('Loaded {} images'.format(len(self.image_paths)))
+
+        self.all_labels = sorted(list(set(self.labels)))
+    
+    def __len__(self):
+        return len(self.image_paths)
+    
+    def __getitem__(self, idx):
+        image_path = self.image_paths[idx]
+        label = self.all_labels.index(self.labels[idx])
+        image = Image.open(image_path)
+        if self.transform is not None:
+            image = self.transform(image)
+        return image, label
+    
+
 EXPLAINER_NAMES = ['lime', 'archipelago', 'rise', 'shap', 'intgrad', 'gradcam']
 
 if __name__ == '__main__':
@@ -111,13 +142,13 @@ if __name__ == '__main__':
 
     # Load the dataset
     # train_dataset = ImageFolder(root=TRAIN_DATA_DIR, transform=transform)
-    val_dataset = ImageFolder(root=VAL_DATA_DIR, transform=transform)
+    val_dataset = ImageFolderSubDataset(VAL_DATA_DIR, transform, num_data=num_data)
 
-    # Use subset for testing purpose
-    # num_data = 2
-    if num_data != -1:
-        # train_dataset = Subset(train_dataset, range(num_data))
-        val_dataset = Subset(val_dataset, range(num_data))
+    # # Use subset for testing purpose
+    # # num_data = 2
+    # if num_data != -1:
+    #     # train_dataset = Subset(train_dataset, range(num_data))
+    #     val_dataset = Subset(val_dataset, range(num_data))
 
     # Create a DataLoader to batch and shuffle the data
     # train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -171,6 +202,10 @@ if __name__ == '__main__':
     corrects = 0
     total = 0
 
+    os.makedirs(os.path.join(exp_dir, 'attributions', explainer_name), exist_ok=True)
+
+    count = 0
+
     for batch in tqdm(val_dataloader):
         inputs, labels = batch
         inputs, labels = inputs.to(device), labels.to(device)
@@ -182,6 +217,7 @@ if __name__ == '__main__':
             expln = explainer(inputs, labels)
 
             aggr_preds = []
+            explns = []
             for j in range(bsz):
                 if explainer_name == 'lime':
                     grouped_attrs = []
@@ -192,41 +228,61 @@ if __name__ == '__main__':
                 elif explainer_name == 'shap':
                     grouped_attrs = []
                     for i in tqdm(range(10)):
-                        expln = explainer(inputs, torch.tensor([i]))
-                        grouped_attrs.append(expln.attributions[j].view(-1))
+                        expln_i = explainer(inputs, torch.tensor([i]))
+                        grouped_attrs.append(expln_i.attributions[j].view(-1))
+                        explns.append(expln_i)
                     grouped_attrs_aggr = torch.tensor([ga.sum() for ga in grouped_attrs]).to(device)
                     aggr_pred = torch.argmax(grouped_attrs_aggr)
                 elif explainer_name == 'rise':
+                    grouped_attrs = expln.explainer_output[j]
                     grouped_attrs_aggr = expln.explainer_output[j].sum(-1).sum(-1)
                     aggr_pred = torch.argmax(grouped_attrs_aggr)
                 elif explainer_name == 'intgrad':
                     grouped_attrs = []
                     for i in tqdm(range(10)):
-                        expln = explainer(inputs, torch.tensor([i]))
-                        grouped_attrs.append(expln.attributions[j].sum(1).view(-1))
+                        expln_i = explainer(inputs, torch.tensor([i]))
+                        grouped_attrs.append(expln_i.attributions[j].view(-1))
+                        explns.append(expln_i)
                     grouped_attrs_aggr = torch.tensor([ga.sum() for ga in grouped_attrs]).to(device)
                     aggr_pred = torch.argmax(grouped_attrs_aggr)
                 elif explainer_name == 'gradcam':
                     grouped_attrs = []
                     for i in tqdm(range(10)):
-                        expln = explainer(inputs, torch.tensor([i]))
-                        grouped_attrs.append(expln.attributions[j].mean(1).view(-1))
+                        expln_i = explainer(inputs, torch.tensor([i]))
+                        grouped_attrs.append(expln_i.attributions[j].view(-1))
+                        explns.append(expln_i)
                     grouped_attrs_aggr = torch.tensor([ga.sum() for ga in grouped_attrs]).to(device)
                     aggr_pred = torch.argmax(grouped_attrs_aggr)
                 elif explainer_name == 'archipelago':
                     grouped_attrs = []
                     for i in tqdm(range(10)):
-                        expln = explainer(inputs, torch.tensor([i]))
-                        grouped_attrs.append(expln.explainer_output['mask_weights'][j])
+                        expln_i = explainer(inputs, torch.tensor([i]))
+                        grouped_attrs.append(expln_i.explainer_output['mask_weights'][j])
+                        explns.append(expln_i)
                     grouped_attrs_aggr = torch.tensor([ga.sum() for ga in grouped_attrs]).to(device)
                     aggr_pred = torch.argmax(grouped_attrs_aggr)
                 else:
                     raise ValueError('Invalid explainer name' + explainer_name)
                 aggr_preds.append(aggr_pred)
+
+                output_filename = f'{count}.pt'
+                attributions_results ={
+                    'input': inputs[j],
+                    'label': labels[j],
+                    'logit': logits[j],
+                    'expln': expln,
+                    'grouped_attrs': grouped_attrs,
+                    'grouped_attrs_aggr': grouped_attrs_aggr,
+                    'explns': explns
+                    
+                }
+                torch.save(attributions_results, os.path.join(exp_dir, 'attributions', explainer_name, output_filename))
+                count += 1
+
             aggr_preds = torch.stack(aggr_preds)
             connsist = (aggr_preds == preds).sum().item()
             correct = (preds == labels).sum().item()
-            
+
             consistents += connsist
             corrects += correct
             total += bsz
@@ -234,8 +290,3 @@ if __name__ == '__main__':
     print('Consistency: ', consistents / total)
     print('Accuracy: ', corrects / total)
     results = {'consistency': consistents / total, 'accuracy': corrects / total}
-
-    os.makedirs(os.path.join(exp_dir, 'results'), exist_ok=True)
-    output_file = os.path.join(exp_dir, 'results', explainer_name + '_consistency.json')
-    with open(output_file, 'w') as f:
-        json.dump(results, f, indent=4)
