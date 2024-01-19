@@ -8,7 +8,7 @@ python scripts/python/text/multirc/eval_multirc_sop_save.py sop
 # methods=("lime" "archipelago" "rise" "shap" "intgrad" "gradcam")
 methods=("lime" "rise" "shap" "intgrad")
 for method in "${methods[@]}"; do
-    python scripts/python/text/multirc/eval_sst_baselines_save.py "$method"
+    python scripts/python/text/sst/eval_sst_baselines_save.py "$method"
 done
 
 # eval all saved attributions

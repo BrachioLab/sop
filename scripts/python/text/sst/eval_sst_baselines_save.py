@@ -346,15 +346,16 @@ if __name__ == '__main__':
                 aggr_preds.append(aggr_pred)
 
                 output_filename = f'{count}.pt'
-                attributions_results ={
+                attributions_results = {
                     'input': inputs[j],
+                    'token_type_ids': token_type_ids[j],
+                    'attention_mask': attention_mask[j],
                     'label': labels[j],
                     'logit': logits[j],
                     'expln': expln,
                     'grouped_attrs': grouped_attrs,
                     'grouped_attrs_aggr': grouped_attrs_aggr,
                     'explns': explns
-                    
                 }
                 torch.save(attributions_results, os.path.join(exp_dir, 'attributions', explainer_name, output_filename))
                 count += 1

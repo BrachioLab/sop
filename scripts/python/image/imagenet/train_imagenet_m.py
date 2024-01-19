@@ -18,6 +18,31 @@ from exlib.modules.sop import SOPImageCls, SOPConfig, get_chained_attr, get_inve
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    # paths and info
+    parser.add_argument('--lr', type=float, 
+                        default=0.000005,
+                        help='lr')
+    parser.add_argument('--group-gen-scale', type=float, 
+                        default=1,
+                        help='group gen scale')
+    parser.add_argument('--group-sel-scale', type=float, 
+                        default=1,
+                        help='group sel scale')
+    
+    return parser
+
+parser = parse_args()
+args = parser.parse_args()
+
+LR = args.lr
+GROUP_GEN_SCALE = args.group_gen_scale
+GROUP_SEL_SCALE = args.group_sel_scale
+
 SEED = 42
 if SEED != -1:
     # Torch RNG
@@ -39,13 +64,15 @@ VAL_DATA_DIR = 'data/imagenet_m/val'
 
 # training args
 batch_size = 16
-lr = 0.000005
+lr = LR
 num_epochs = 20
 warmup_steps = 2000
 mask_batch_size = 64
+group_gen_scale = GROUP_GEN_SCALE
+group_sel_scale = GROUP_SEL_SCALE
 
 # experiment args
-exp_dir = 'exps/imagenet_m_2h'
+exp_dir = 'exps/imagenet_m_2h_lr{}_gg{}_gs{}'.format(lr, group_gen_scale, group_sel_scale)
 os.makedirs(exp_dir, exist_ok=True)
 
 backbone_model = AutoModelForImageClassification.from_pretrained(backbone_model_name)
@@ -57,7 +84,9 @@ config = SOPConfig(
     num_heads=2,
     num_masks_sample=20,
     num_masks_max=200,
-    finetune_layers=['model.classifier']
+    finetune_layers=['model.classifier'],
+    group_gen_scale=group_gen_scale,
+    group_sel_scale=group_sel_scale
 )
 config.__dict__.update(backbone_config.__dict__)
 config.num_labels = len(backbone_config.label2id)
@@ -128,6 +157,8 @@ def eval(model, dataloader, criterion):
     total_loss = 0.0
     correct = 0
     total = 0
+    total_nnz = 0
+    total_num_masks = 0
     with torch.no_grad():
         progress_bar_eval = tqdm(range(len(dataloader)))
         for i, batch in enumerate(dataloader):
@@ -135,7 +166,21 @@ def eval(model, dataloader, criterion):
             inputs, labels = batch
             inputs, labels = inputs.to(device), labels.to(device)
 
-            logits = model(inputs)
+            outputs = model(inputs, return_tuple=True)
+            
+            logits = outputs.logits
+            
+            for i in range(len(logits)):
+                pred = logits[i].argmax(-1).item()
+
+                pred_mask_idxs_sort = outputs.mask_weights[i,:,pred].argsort(descending=True)
+                mask_weights_sort = (outputs.mask_weights * outputs.logits_all)[i,pred_mask_idxs_sort,pred]
+                masks_sort = outputs.masks[0,pred_mask_idxs_sort]
+                masks_sort_used = (masks_sort[mask_weights_sort > 0] > masks_sort[mask_weights_sort > 0].mean()).int()
+                mask_weights_sort_used = mask_weights_sort[mask_weights_sort > 0]
+                nnz = (masks_sort[mask_weights_sort > 0] > 0).sum() / masks_sort[mask_weights_sort > 0].view(-1).shape[0]
+                total_nnz += nnz.item()
+                total_num_masks += len(masks_sort_used)
             
             # val loss
             loss = criterion(logits, labels)
@@ -151,12 +196,16 @@ def eval(model, dataloader, criterion):
     
     val_acc = correct / total
     val_loss = total_loss / total
+    val_nnz = total_nnz / total
+    val_n_masks_avg = total_num_masks / total
     
     model.train()
     
     return {
         'val_acc': val_acc,
-        'val_loss': val_loss
+        'val_loss': val_loss,
+        'val_nnz': val_nnz,
+        'val_n_masks_avg': val_n_masks_avg
     }
 
 import logging
@@ -213,12 +262,16 @@ for epoch in range(num_epochs):
             val_results = eval(model, val_dataloader, criterion)
             val_acc = val_results['val_acc']
             val_loss = val_results['val_loss']
+            val_nnz = val_results['val_nnz']
+            val_n_masks_avg = val_results['val_n_masks_avg']
             log_message = f'Epoch {epoch}, Step {step}, Val acc {val_acc:.4f}, Val loss {val_loss:.4f}'
             print(log_message)
             logging.info(log_message)
             if track:
                 wandb.log({'val_acc': val_acc,
                            'val_loss': val_loss,
+                            'val_nnz': val_nnz,
+                            'val_n_masks_avg': val_n_masks_avg,
                         'epoch': epoch,
                         'step': step})
             

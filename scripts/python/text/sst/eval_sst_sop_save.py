@@ -241,8 +241,10 @@ if __name__ == '__main__':
 
             for j in range(bsz):
                 output_filename = f'{count}.pt'
-                attributions_results ={
+                attributions_results = {
                     'input': inputs[j],
+                    'token_type_ids': token_type_ids[j],
+                    'attention_mask': attention_mask[j],
                     'label': labels[j],
                     'logit': expln.logits[j],
                     'expln': expln,
