@@ -30,6 +30,7 @@ from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset
 from PIL import Image
 import jsonlines
+from exlib.modules.fresh import FRESH
 
 
 from collections import namedtuple
@@ -107,11 +108,16 @@ class SSTDataset(Dataset):
 # EXPLAINER_NAMES = ['lime', 'rise', 'shap', 'intgrad']
 
 if __name__ == '__main__':
-    explainer_name = 'sop'
+    # explainer_name = 'sop'
+    explainer_name = sys.argv[1]
     if len(sys.argv) > 2:
         num_data = int(sys.argv[2])
     else:
         num_data = -1
+    if len(sys.argv) > 3:
+        group_gen_scale = float(sys.argv[3])
+    else:
+        group_gen_scale = None
     # if explainer_name not in EXPLAINER_NAMES:
     #     raise ValueError('Invalid explainer name' + explainer_name)
 
@@ -144,14 +150,23 @@ if __name__ == '__main__':
     mask_batch_size = 4
 
     # experiment args
-    exp_dir = 'exps/sst/best'
+    if 'sop' in explainer_name:
+        # exp_dir = 'exps/sst_m_1h_gg2.0_gs1.0/best'
+        exp_dir = 'exps/sst_m_1h_gg2.0_gs1.0_ggta1.0_ggtb0.1/best'
+    else:
+        exp_dir = 'exps/sst_m_1h_gg1_gs1_fresh'
 
     backbone_model = AutoModelForSequenceClassification.from_pretrained(backbone_model_name)
     processor = AutoTokenizer.from_pretrained(backbone_processor_name)
     backbone_config = AutoConfig.from_pretrained(backbone_model_name)
 
-    config = SOPConfig(json_file=os.path.join(exp_dir, 'config.json'),
-                    projected_input_scale=2)
+    if 'sop' in explainer_name:
+        config = SOPConfig(json_file=os.path.join(exp_dir, 'config.json'))
+    else:
+        config = SOPConfig(json_file=os.path.join(exp_dir, 'config.json'))
+    if group_gen_scale is not None:
+        config.group_gen_scale = group_gen_scale
+        explainer_name = explainer_name + '_gg{}'.format(group_gen_scale)
 
     # Path to your dataset file
     train_path = 'data/SST/data/train.jsonl'
@@ -175,14 +190,32 @@ if __name__ == '__main__':
 
     wrapped_backbone_model = WrappedBackboneModel(backbone_model)
     wrapped_backbone_model = wrapped_backbone_model.to(device)
-    class_weights = get_chained_attr(wrapped_backbone_model, config.finetune_layers[0]).weight #.clone().to(device)
-    projection_layer = wrapped_backbone_model.model.bert.embeddings.word_embeddings
+    
     # original_model = WrappedModel(backbone_model).to(device)
     # original_model2 = WrappedBackboneModel2(backbone_model).to(device)
 
-    model = SOPTextCls(config, wrapped_backbone_model, class_weights=class_weights, projection_layer=projection_layer)
-    state_dict = torch.load(os.path.join(exp_dir, 'checkpoint.pth'))
-    model.load_state_dict(state_dict['model'])
+    if 'sop' in explainer_name:
+        class_weights = get_chained_attr(wrapped_backbone_model, config.finetune_layers[0]).weight #.clone().to(device)
+        projection_layer = wrapped_backbone_model.model.bert.embeddings.word_embeddings
+        model = SOPTextCls(config, wrapped_backbone_model, class_weights=class_weights, projection_layer=projection_layer)
+        state_dict = torch.load(os.path.join(exp_dir, 'checkpoint.pth'))
+        try:
+            model.load_state_dict(state_dict['model'], strict=False)
+        except:
+            import pdb; pdb.set_trace()
+            model.load_state_dict(state_dict['model'])
+    else:
+        import copy
+        fresh_config = copy.deepcopy(backbone_config)
+        fresh_config.__dict__.update(config.__dict__)
+        fresh_config.finetune_layers = [fresh_config.finetune_layers[0].replace('model.', '')]
+        model = FRESH.from_pretrained(exp_dir, 
+                      config=fresh_config,
+                        blackbox_model=backbone_model,
+                        model_type='text',
+                        return_tuple=True,
+                        postprocess_attn=lambda x: x.attentions[-1].mean(dim=1)[:,0],
+                        postprocess_logits=lambda x: x.logits)
     model = model.to(device)
     model.eval();
     
@@ -227,10 +260,18 @@ if __name__ == '__main__':
         bsz = inputs.shape[0]
         with torch.no_grad():
             # logits = original_model(**inputs_dict)
-            expln = model(inputs, kwargs=kwargs, return_tuple=True)
+            if 'sop' in explainer_name:
+                expln = model(inputs, kwargs=kwargs, return_tuple=True,
+                              binary_threshold=0.5)
+            else: # fresh
+                expln = model(inputs, **kwargs)
             preds = torch.argmax(expln.logits, dim=-1)
-            grouped_attrs_aggr = expln.grouped_attributions.sum(dim=-2)
-            aggr_preds = torch.argmax(grouped_attrs_aggr, dim=-1)
+            if 'sop' in explainer_name:
+                grouped_attrs_aggr = expln.grouped_attributions.sum(dim=-2)
+                aggr_preds = torch.argmax(grouped_attrs_aggr, dim=-1)
+            else:
+                grouped_attrs_aggr = expln.logits
+                aggr_preds = preds
             
             connsist = (aggr_preds == preds).sum().item()
             correct = (preds == labels).sum().item()
@@ -241,18 +282,32 @@ if __name__ == '__main__':
 
             for j in range(bsz):
                 output_filename = f'{count}.pt'
-                attributions_results = {
-                    'input': inputs[j],
-                    'token_type_ids': token_type_ids[j],
-                    'attention_mask': attention_mask[j],
-                    'label': labels[j],
-                    'logit': expln.logits[j],
-                    'expln': expln,
-                    'grouped_attrs': expln.grouped_attributions[j],
-                    'grouped_attrs_aggr': grouped_attrs_aggr[j],
-                    'explns': []
-                    
-                }
+                if 'sop' in explainer_name:
+                    attributions_results = {
+                        'input': inputs[j],
+                        'token_type_ids': token_type_ids[j],
+                        'attention_mask': attention_mask[j],
+                        'label': labels[j],
+                        'logit': expln.logits[j],
+                        'expln': expln,
+                        'grouped_attrs': expln.grouped_attributions[j],
+                        'grouped_attrs_aggr': grouped_attrs_aggr[j],
+                        'explns': []
+                        
+                    }
+                else:
+                    attributions_results = {
+                        'input': inputs[j],
+                        'token_type_ids': token_type_ids[j],
+                        'attention_mask': attention_mask[j],
+                        'label': labels[j],
+                        'logit': expln.logits[j],
+                        'expln': expln,
+                        'grouped_attrs': grouped_attrs_aggr[j],
+                        'grouped_attrs_aggr': grouped_attrs_aggr[j],
+                        'explns': []
+                        
+                    }
                 torch.save(attributions_results, os.path.join(exp_dir, 'attributions', explainer_name, output_filename))
                 count += 1
             

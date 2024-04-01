@@ -160,7 +160,8 @@ if __name__ == '__main__':
     mask_batch_size = 4
 
     # experiment args
-    exp_dir = 'exps/sst/best'
+    # exp_dir = 'exps/sst_m_1h_gg2.0_gs1.0/best'
+    exp_dir = 'exps/sst_m_1h_gg2.0_gs1.0_ggta1.0_ggtb0.1/best'
 
     backbone_model = AutoModelForSequenceClassification.from_pretrained(backbone_model_name)
     processor = AutoTokenizer.from_pretrained(backbone_processor_name)

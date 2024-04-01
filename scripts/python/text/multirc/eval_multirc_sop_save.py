@@ -108,14 +108,13 @@ if __name__ == '__main__':
     mask_batch_size = 4
 
     # experiment args
-    exp_dir = 'exps/multirc_5e-06/best'
+    exp_dir = 'exps/multirc_1h_gg0.1_gs1.0/best'
 
     backbone_model = AutoModelForSequenceClassification.from_pretrained(backbone_model_name)
     processor = AutoTokenizer.from_pretrained(backbone_processor_name)
     backbone_config = AutoConfig.from_pretrained(backbone_model_name)
 
-    config = SOPConfig(json_file=os.path.join(exp_dir, 'config.json'),
-                    projected_input_scale=2)
+    config = SOPConfig(json_file=os.path.join(exp_dir, 'config.json'))
 
     SENT_SEPS = [processor.convert_tokens_to_ids(processor.tokenize(token)[0]) for token in [';',',','.','?','!',';']]
     SEP = processor.convert_tokens_to_ids(processor.tokenize('[SEP]')[0])
@@ -282,8 +281,8 @@ if __name__ == '__main__':
                 token_type_ids = None
             attention_mask = torch.stack(batch['attention_mask']).transpose(0, 1).to(device)
 
-            concatenated_rows = [torch.stack(sublist) for sublist in batch['segs']]
-            segs = torch.stack(concatenated_rows).permute(2, 0, 1).to(device).float()
+            # concatenated_rows = [torch.stack(sublist) for sublist in batch['segs']]
+            # segs = torch.stack(concatenated_rows).permute(2, 0, 1).to(device).float()
             # print('segs', segs.shape)
         else:
             inputs = batch['input_ids'].to(device)
@@ -292,7 +291,7 @@ if __name__ == '__main__':
             else:
                 token_type_ids = None
             attention_mask = batch['attention_mask'].to(device)
-            segs = batch['segs'].to(device).float()
+            # segs = batch['segs'].to(device).float()
         kwargs = {
             'token_type_ids': token_type_ids,
             'attention_mask': attention_mask,
@@ -306,7 +305,7 @@ if __name__ == '__main__':
         bsz = inputs.shape[0]
         with torch.no_grad():
             # logits = original_model(**inputs_dict)
-            expln = model(inputs, segs=segs, kwargs=kwargs, return_tuple=True)
+            expln = model(inputs, kwargs=kwargs, return_tuple=True)
             preds = torch.argmax(expln.logits, dim=-1)
             grouped_attrs_aggr = expln.grouped_attributions.sum(dim=-2)
             aggr_preds = torch.argmax(grouped_attrs_aggr, dim=-1)
@@ -320,8 +319,10 @@ if __name__ == '__main__':
 
             for j in range(bsz):
                 output_filename = f'{count}.pt'
-                attributions_results ={
+                attributions_results = {
                     'input': inputs[j],
+                    'token_type_ids': token_type_ids[j],
+                    'attention_mask': attention_mask[j],
                     'label': labels[j],
                     'logit': expln.logits[j],
                     'expln': expln,

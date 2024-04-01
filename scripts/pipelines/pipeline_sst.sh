@@ -1,8 +1,10 @@
 # train
 # python scripts/python/train_multirc.py
+python train_sst.py --group-gen-scale 2 --group-sel-scale 1 --num-heads 1 \
+--group-gen-temp-alpha 1 --group-gen-temp-beta 0.1
 
 # save attributions sop for 5 examples each class
-python scripts/python/text/multirc/eval_multirc_sop_save.py sop
+python scripts/python/text/sst/eval_sst_sop_save.py sop
 
 # save attributions baselines for 5 examples each class
 # methods=("lime" "archipelago" "rise" "shap" "intgrad" "gradcam")

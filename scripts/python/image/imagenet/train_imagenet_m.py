@@ -33,6 +33,9 @@ def parse_args():
     parser.add_argument('--group-sel-scale', type=float, 
                         default=1,
                         help='group sel scale')
+    parser.add_argument('--num-heads', type=int, 
+                        default=2,
+                        help='num heads')
     
     return parser
 
@@ -42,6 +45,7 @@ args = parser.parse_args()
 LR = args.lr
 GROUP_GEN_SCALE = args.group_gen_scale
 GROUP_SEL_SCALE = args.group_sel_scale
+NUM_HEADS = args.num_heads
 
 SEED = 42
 if SEED != -1:
@@ -72,7 +76,7 @@ group_gen_scale = GROUP_GEN_SCALE
 group_sel_scale = GROUP_SEL_SCALE
 
 # experiment args
-exp_dir = 'exps/imagenet_m_2h_lr{}_gg{}_gs{}'.format(lr, group_gen_scale, group_sel_scale)
+exp_dir = 'exps/imagenet_m_{}h_lr{}_gg{}_gs{}'.format(NUM_HEADS, lr, group_gen_scale, group_sel_scale)
 os.makedirs(exp_dir, exist_ok=True)
 
 backbone_model = AutoModelForImageClassification.from_pretrained(backbone_model_name)
@@ -81,7 +85,7 @@ backbone_config = AutoConfig.from_pretrained(backbone_model_name)
 
 config = SOPConfig(
     attn_patch_size=16,
-    num_heads=2,
+    num_heads=NUM_HEADS,
     num_masks_sample=20,
     num_masks_max=200,
     finetune_layers=['model.classifier'],
