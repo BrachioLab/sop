@@ -23,6 +23,7 @@ from PIL import Image
 from exlib.modules.sop import SOPImageCls, SOPConfig, get_chained_attr, get_inverse_sqrt_with_separate_heads_schedule_with_warmup
 from exlib.modules.fresh import FRESH
 from torchvision import transforms
+import copy
 
 
 class ImageFolderSubDataset(Dataset):
@@ -79,6 +80,18 @@ def parse_args():
     parser.add_argument('--group-gen-temp-beta', type=float, 
                         default=1,
                         help='group gen temp beta (inside log)')
+    parser.add_argument('--group-gen-blur-ks1', type=int,
+                        default=-1,
+                        help='group gen blur ks1')
+    parser.add_argument('--group-gen-blur-sigma1', type=int,
+                        default=-1,
+                        help='group gen blur sigma1')
+    parser.add_argument('--group-gen-blur-ks2', type=int, 
+                        default=-1,
+                        help='group gen blur ks2')
+    parser.add_argument('--group-gen-blur-sigma2', type=int,
+                        default=-1,
+                        help='group gen blur sigma2')
     parser.add_argument('--num-heads', type=int, 
                         default=2,
                         help='num heads')
@@ -113,6 +126,9 @@ def parse_args():
                         default=False,
                         action='store_true',
                         help='finetune backbone')
+    parser.add_argument('--projection-layer', type=str,
+                        default=None, choices=[None, 'embed'],
+                        help='scheduler type')
     
     
     return parser
@@ -125,6 +141,10 @@ GROUP_GEN_SCALE = args.group_gen_scale
 GROUP_SEL_SCALE = args.group_sel_scale
 GROUP_GEN_TEMP_ALPHA = args.group_gen_temp_alpha
 GROUP_GEN_TEMP_BETA = args.group_gen_temp_beta
+GROUP_GEN_BLUR_KS1 = args.group_gen_blur_ks1
+GROUP_GEN_BLUR_SIGMA1 = args.group_gen_blur_sigma1
+GROUP_GEN_BLUR_KS2 = args.group_gen_blur_ks2
+GROUP_GEN_BLUR_SIGMA2 = args.group_gen_blur_sigma2
 NUM_HEADS = args.num_heads
 TRAIN_SIZE = args.train_size
 VAL_SIZE = args.val_size
@@ -168,6 +188,10 @@ group_sel_scale = GROUP_SEL_SCALE
 # group_gen_temperature = GROUP_GEN_TEMPERATURE
 group_gen_temp_alpha = GROUP_GEN_TEMP_ALPHA
 group_gen_temp_beta = GROUP_GEN_TEMP_BETA
+group_gen_blur_ks1 = GROUP_GEN_BLUR_KS1
+group_gen_blur_sigma1 = GROUP_GEN_BLUR_SIGMA1
+group_gen_blur_ks2 = GROUP_GEN_BLUR_KS2
+group_gen_blur_sigma2 = GROUP_GEN_BLUR_SIGMA2
 # backbone_layer = BACKBONE_LAYER
 train_size = TRAIN_SIZE
 val_size = VAL_SIZE
@@ -175,15 +199,17 @@ val_size = VAL_SIZE
 
 # experiment args
 if args.dataset == 'imagenet':
-    exp_name = 'imagenet_bbm{}_{}h_lr{}_gg{}_gs{}_ggta{}_ggtb{}_ts{}_vs{}_st{}_ep{}{}'.format(args.backbone_model,
+    exp_name = 'imagenet_bbm{}_{}h_lr{}_gg{}_gs{}_ggta{}_ggtb{}_ts{}_vs{}_st{}_ep{}{}_ggbk1{}_ggbs1{}_ggbk2{}_ggbs2{}_pj{}'.format(args.backbone_model,
                 NUM_HEADS, 
                 lr, group_gen_scale, group_sel_scale, group_gen_temp_alpha, group_gen_temp_beta,
-                train_size, val_size, args.scheduler_type, num_epochs, ft_backbone)
+                train_size, val_size, args.scheduler_type, num_epochs, ft_backbone, group_gen_blur_ks1, group_gen_blur_sigma1, group_gen_blur_ks2, group_gen_blur_sigma2,
+                args.projection_layer)
 else:
-    exp_name = 'imagenet_m_bbm{}_{}h_lr{}_gg{}_gs{}_ggta{}_ggtb{}_ts{}_vs{}_st{}_ep{}{}'.format(args.backbone_model,
+    exp_name = 'imagenet_m_bbm{}_{}h_lr{}_gg{}_gs{}_ggta{}_ggtb{}_ts{}_vs{}_st{}_ep{}{}_ggbk1{}_ggbs1{}_ggbk2{}_ggbs2{}_pj{}'.format(args.backbone_model,
                 NUM_HEADS, 
                 lr, group_gen_scale, group_sel_scale, group_gen_temp_alpha, group_gen_temp_beta,
-                train_size, val_size, args.scheduler_type, num_epochs, ft_backbone)
+                train_size, val_size, args.scheduler_type, num_epochs, ft_backbone, group_gen_blur_ks1, group_gen_blur_sigma1, group_gen_blur_ks2, group_gen_blur_sigma2,
+                args.projection_layer)
 
 if args.model == 'fresh':
     exp_name += '_fresh'
@@ -224,6 +250,10 @@ config = SOPConfig(
     group_sel_scale=group_sel_scale,
     group_gen_temp_alpha=group_gen_temp_alpha,
     group_gen_temp_beta=group_gen_temp_beta,
+    group_gen_blur_ks1=group_gen_blur_ks1,
+    group_gen_blur_sigma1=group_gen_blur_sigma1,
+    group_gen_blur_ks2=group_gen_blur_ks2,
+    group_gen_blur_sigma2=group_gen_blur_sigma2
 )
 print('config', config.__dict__)
 if args.backbone_model == 'vit':
@@ -316,7 +346,15 @@ wrapped_backbone_model = wrapped_backbone_model.to(device)
 # class_weights = get_chained_attr(wrapped_backbone_model, config.finetune_layers[0]).weight #.clone().to(device)
 
 if args.model == 'sop':
-    model = SOPImageCls(config, wrapped_backbone_model)
+    if args.projection_layer == None:
+        projection_layer = None
+    else:
+        print('Using projection layer')
+        projection_layer_emb = backbone_model.vit.embeddings
+        patch_size = 14
+        projection_layer = lambda x: projection_layer_emb(x)[:,1:].transpose(1,2).reshape(-1, config.hidden_size, patch_size, patch_size)
+    model = SOPImageCls(config, wrapped_backbone_model, projection_layer=projection_layer)
+    
 else:
     import copy
     fresh_config = copy.deepcopy(backbone_config)

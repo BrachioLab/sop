@@ -113,6 +113,8 @@ if __name__ == '__main__':
     total = 0
 
     for batch in tqdm(val_dataloader):
+        if bi % (len(val_dataloader) // (num_data * config.num_labels)) != 0:
+            continue
         inputs, labels = batch
         inputs, labels = inputs.to(device), labels.to(device)
         bsz = inputs.shape[0]
