@@ -5,7 +5,7 @@ class ImageNetConfig(BaseConfig):
         super().__init__()
         self._config = {
             'dataset': {
-                'name': 'imagenet',
+                'name': 'imagenet_s',
                 'root': '/shared_data0/weiqiuy/datasets/imagenet'
             },
             'training': {

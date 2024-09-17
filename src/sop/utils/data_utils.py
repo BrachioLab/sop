@@ -9,6 +9,7 @@ import torchvision.transforms as transforms
 # from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
 from torchvision.transforms import v2
+import numpy as np
 
 
 def resize_binary_image(image, size, mode='bilinear'):
@@ -22,9 +23,10 @@ def resize_binary_image(image, size, mode='bilinear'):
 
 
 class ImageFolderSegSubDataset(Dataset):
-    def __init__(self, data_dir, seg_dir, transform=None, num_data=-1):
+    def __init__(self, data_dir, seg_dir, attr_dir=None, transform=None, num_data=-1, debug=False):
         self.data_dir = data_dir
         self.seg_dir = seg_dir
+        self.attr_dir = attr_dir
         self.transform = transform
         self.image_paths = []
         self.seg_paths = []
@@ -35,8 +37,13 @@ class ImageFolderSegSubDataset(Dataset):
         self.seg_paths_all = []
         self.labels_all = []
         self.use_indices = []
+
+        # print('debug', debug)
         
         for label in tqdm(sorted(os.listdir(data_dir))):
+            if debug:
+                if len(self.all_labels) >= 100:
+                    break
             seg_dirname = os.path.join(seg_dir, label)
             img_dirname = os.path.join(data_dir, label)
             if os.path.isdir(img_dirname):
@@ -49,6 +56,14 @@ class ImageFolderSegSubDataset(Dataset):
                     image_path = seg_path.replace('.png', '.JPEG')
                     if not os.path.exists(os.path.join(data_dir, label, image_path)):
                         continue
+                    if self.attr_dir is not None:
+                        attr_path = os.path.join(self.attr_dir, label, 
+                                os.path.basename(image_path) + '.pt')
+                        if not os.path.exists(attr_path):
+                            print('failed' + attr_path)
+                            import pdb; pdb.set_trace()
+                            continue
+
                     self.image_paths.append(os.path.join(data_dir, label, image_path))
                     self.seg_paths.append(os.path.join(seg_dir, label, seg_path))
                     self.labels.append(label)
@@ -57,27 +72,31 @@ class ImageFolderSegSubDataset(Dataset):
             if os.path.isdir(img_dirname):
                 for i, image_path in enumerate(sorted(os.listdir(img_dirname))):
                     if os.path.join(data_dir, label, image_path) in self.image_paths:
+                        
+                        if self.attr_dir is not None:
+                            try:
+                                attr_path = os.path.join(self.attr_dir, label, os.path.basename(image_path) + '.pt')
+                                attr = torch.load(attr_path)
+                                # self.use_indices.append(len(self.image_paths_all)) # add the index in
+                            except:
+                                print('failed' + attr_path)
+                                import pdb; pdb.set_trace()
+                                continue
                         self.use_indices.append(len(self.image_paths_all)) # add the index in
                     seg_path = image_path.replace('.JPEG', '.png')
                     self.image_paths_all.append(os.path.join(data_dir, label, image_path))
                     self.seg_paths_all.append(os.path.join(seg_dir, label, seg_path))
                     self.labels_all.append(label)
-        # self.all_labels = sorted(list(set(self.labels)))
-        # self.all_labels = sorted(os.listdir())
         
         print('Loaded {} images and {} classes'.format(len(self.use_indices), len(self.all_labels))) 
     
     def __len__(self):
-        # return len(self.image_paths)
         return len(self.use_indices)
     
     def __getitem__(self, i):
-        # print('hi')
-        # import pdb; pdb.set_trace()
         idx = self.use_indices[i]
         
         image_path = self.image_paths_all[idx]
-        # print('image_path', image_path)
         label = self.all_labels.index(self.labels_all[idx])
         seg_path = self.seg_paths_all[idx]
     
@@ -88,17 +107,25 @@ class ImageFolderSegSubDataset(Dataset):
         seg = torch.tensor(np.asarray(seg))
         seg = seg.sum(-1)[None,None].float() # (bsz, num_channels, img_dim1, img_dim2)
         seg = resize_binary_image(seg, size=(image.shape[-2], image.shape[-1]))[0]
+        
+        if self.attr_dir is not None:
+            attr_path = os.path.join(self.attr_dir, self.labels_all[idx], os.path.basename(image_path) + '.pt')
+            attr = torch.load(attr_path)
+            return image, label, seg, attr, idx
         return image, label, seg, idx
 
 
 class ImageFolderSubDataset(Dataset):
-    def __init__(self, data_dir, transform=None, num_data=-1, start_data=0):
+    def __init__(self, data_dir, transform=None, num_data=-1, start_data=0, debug=False):
         self.data_dir = data_dir
         self.transform = transform
         self.image_paths = []
         self.labels = []
         
         for label in sorted(os.listdir(data_dir)):
+            if debug:
+                if len(self.all_labels) >= 100:
+                    break
             dirname = os.path.join(data_dir, label)
             if not os.path.isdir(dirname):
                 continue
@@ -131,13 +158,17 @@ aug = v2.Compose([
     v2.RandomHorizontalFlip(p=0.5)
 ])
 
-def transform(image):
+def transform(image, processor=None):
     # Preprocess the image using the ViTImageProcessor
     image = image.convert("RGB")
-    inputs = processor(image, return_tensors='pt')
+    if processor is None:
+        inputs = image
+    else:
+        inputs = processor(image, return_tensors='pt')
+    # import pdb; pdb.set_trace()
     return inputs['pixel_values'].squeeze(0)
 
-def transform_aug(image):
+def transform_aug(image, processor=None):
     # Preprocess the image using the ViTImageProcessor
     image = image.convert("RGB")
     inputs = processor(image, return_tensors='pt')
@@ -152,43 +183,57 @@ from collections import namedtuple
 DatasetOutput = namedtuple('DatasetOutput', ['dataset', 'dataloader'])
 
 
-def get_dataset(dataset_name, split='val', num_data=-1, start_data=0, batch_size=16, shuffle=False):
+def get_dataset(dataset_name, split='val', num_data=-1, start_data=0, batch_size=16, shuffle=False,
+                processor=None, attr_dir=None, debug=False):
     if dataset_name == 'imagenet':
         TRAIN_DATA_DIR = '/scratch/datasets/imagenet/train'
         VAL_DATA_DIR = '/scratch/datasets/imagenet/val'
         if split == 'train':
-            dataset = ImageFolderSubDataset(TRAIN_DATA_DIR, transform=transform_aug, 
+            dataset = ImageFolderSubDataset(TRAIN_DATA_DIR, 
+                                            transform=lambda x: transform_aug(x, processor=processor), 
                                             num_data=num_data,
-                                            start_data=start_data)
+                                            start_data=start_data,
+                                            debug=debug)
         elif split == 'val':
-            dataset = ImageFolderSubDataset(VAL_DATA_DIR, transform=transform, 
+            dataset = ImageFolderSubDataset(VAL_DATA_DIR, 
+                                            transform=lambda x: transform(x, processor=processor), 
                                             num_data=num_data,
-                                            start_data=start_data)
+                                            start_data=start_data,
+                                            debug=debug)
         elif split == 'train_val':
-            dataset = ImageFolderSubDataset(TRAIN_DATA_DIR, transform=transform, 
+            dataset = ImageFolderSubDataset(TRAIN_DATA_DIR, 
+                                            transform=lambda x: transform(x, processor=processor), 
                                             num_data=num_data,
-                                            start_data=start_data)
+                                            start_data=start_data,
+                                            debug=debug)
         else:
             raise ValueError(f'split {split} not recognized')
         
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+        # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     elif dataset_name == 'imagenet_s':
         TRAIN_DATA_DIR = '/scratch/datasets/imagenet/train'
         VAL_DATA_DIR = '/scratch/datasets/imagenet/val'
         TRAIN_SEG_DIR = '/shared_data0/weiqiuy/github/ImageNet-S/datapreparation/ImageNetS919/train-semi-segmentation'
         VAL_SEG_DIR = '/shared_data0/weiqiuy/github/ImageNet-S/datapreparation/ImageNetS919/validation-segmentation'
         if split == 'train':
-            dataset = ImageFolderSegSubDataset(TRAIN_DATA_DIR, TRAIN_SEG_DIR, transform=transform_aug, 
-                                            num_data=num_data)
+            dataset = ImageFolderSegSubDataset(TRAIN_DATA_DIR, TRAIN_SEG_DIR, attr_dir,
+                                            transform=lambda x: transform_aug(x, processor=processor), 
+                                            num_data=num_data,
+                                            debug=debug)
         elif split == 'val':
-            dataset = ImageFolderSegSubDataset(VAL_DATA_DIR, VAL_SEG_DIR, transform=transform, 
-                                            num_data=num_data)
+            dataset = ImageFolderSegSubDataset(VAL_DATA_DIR, VAL_SEG_DIR, attr_dir,
+                                            transform=lambda x: transform(x, processor=processor), 
+                                            num_data=num_data,
+                                            debug=debug)
         elif split == 'train_val':
-            dataset = ImageFolderSegSubDataset(TRAIN_DATA_DIR, TRAIN_SEG_DIR, transform=transform, 
-                                            num_data=num_data)
+            dataset = ImageFolderSegSubDataset(TRAIN_DATA_DIR, TRAIN_SEG_DIR, attr_dir,
+                                            transform=lambda x: transform(x, processor=processor),  
+                                            num_data=num_data,
+                                            debug=debug)
         else:
             raise ValueError(f'split {split} not recognized')
     else:
         raise ValueError(f'dataset {dataset_name} is not the dataset')
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
         
     return DatasetOutput(dataset, dataloader)
