@@ -1,5 +1,6 @@
 import torch
-from ..utils import get_explainer, get_expln_all_classes, fidelity
+from ..utils import get_explainer, get_expln_all_classes
+from .utils import fidelity
 import os
 from tqdm.auto import tqdm
 
@@ -32,6 +33,7 @@ def get_all_fidelity(dataloader, original_model, backbone_model, explainer_name,
                                                num_classes) #val_config['model']['num_classes']
         if len(fids) == 0:
             print('len(expln)', len(expln))
+        # import pdb; pdb.set_trace()
 
         fid = fidelity(expln, probs)
 

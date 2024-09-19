@@ -4,6 +4,7 @@
 from .data_utils import get_dataset
 from . import vis_utils
 from . import imagenet_utils
+from . import cosmogrid_utils
 from . import model_utils
 from . import general_utils
 from . import metric_utils
@@ -19,6 +20,7 @@ __all__ = [
     'show_masks',
     'get_mask_weights_titles',
     'imagenet_utils',
+    'cosmogrid_utils',
     'model_utils',
     'general_utils',
     'metric_utils',
@@ -27,5 +29,5 @@ __all__ = [
     'seed_all',
     'fidelity',
     'get_explainer',
-    'get_expln_all_classes'
+    'get_expln_all_classes',
     ]  # Define the public interface

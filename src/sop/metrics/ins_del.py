@@ -47,7 +47,6 @@ def get_k_pred(explainer, method, inputs, attrs, ins_steps, start, end, original
         if type(start) is int:
             topks = torch.tensor(np.linspace(start, end, ins_steps), dtype=torch.int).to(masks.device) - 1
         else:
-            import math
             topks = (torch.tensor(np.linspace(start, end, ins_steps), 
                                   dtype=torch.float).to(masks.device) * 196).int() 
             topks = topks - 1
@@ -203,7 +202,7 @@ def get_ins_del_perc(val_config, original_model, backbone_model, model, processo
         plt.figure()
         plt.plot(ins_scores_original_curve[0])
         plt.show()
-    print(np.mean(insertion_scores_curve_perc))
+    print(np.mean(insertion_scores_perc))
     return {
         'scores_mean': ins_scores,
         'scores_curve': ins_scores_curve,

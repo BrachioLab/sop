@@ -33,6 +33,22 @@ debug = False
 if method not in methods:
     raise ValueError(f'Unsupported explainer: {method}')
 
+if len(sys.argv) > 2:
+    step_size = sys.argv[2]
+else:
+    step_size = 'large'
+
+if step_size == 'small':
+    step_size_suffix = '_small'
+    ins_steps=196
+    start=1
+    end=196
+else:
+    step_size_suffix = '_large' #''
+    ins_steps=10
+    start=0.1
+    end=1.0
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 sop.utils.seed_all(42)
 
@@ -92,11 +108,11 @@ model = model.to(device)
 model.eval();
 
 results_ins = get_ins_del_perc(val_config, original_model, backbone_model, model, processor,
-                     method, debug=debug)
+                     method, ins_steps=ins_steps, start=start, end=end, debug=debug)
 results_del = get_ins_del_perc(val_config, original_model, backbone_model, model, processor,
-                     method, debug=debug, deletion=True)
+                     method, ins_steps=ins_steps, start=start, end=end, debug=debug, deletion=True)
 
-save_dir = f'/shared_data0/weiqiuy/sop/results/ins_del/{val_config["dataset"]["name"]}/'
+save_dir = f'/shared_data0/weiqiuy/sop/results/ins_del{step_size_suffix}/{val_config["dataset"]["name"]}/'
 os.makedirs(save_dir, exist_ok=True)
 
 results_path = f'{save_dir}/{method}.pt'
