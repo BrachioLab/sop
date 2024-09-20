@@ -6,6 +6,10 @@ Official implementation for "Sum-of-Parts Models: Faithful Attributions for Grou
 
 Authors: Weiqiu You, Helen Qu, Marco Gatti, Bhuvnesh Jain, Eric Wong
 
+## TODO
+- [ ] Release updated code - by Oct 1st 2024
+- [ ] Update arxiv - by Oct 1st 2024
+
 ## Prerequisite
 
 To set up the environment:
