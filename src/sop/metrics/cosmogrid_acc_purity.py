@@ -388,9 +388,9 @@ def plot_mse_vs_purity(results, threshold_bright=0.015, threshold_dark=0.6, save
     for i, txt in enumerate(labels):
         texts.append(ax.annotate(name_mapping[txt], (Xs[i], Ys[i])))
     adjust_text(texts) #, arrowprops=dict(arrowstyle='->', color='red'))
-    ax.set_xlabel(title.split('vs')[0].strip() + r' $\downarrow$')
-    ax.set_ylabel(title.split('vs')[1].strip() + r' $\uparrow$')
-    ax.set_title(r'Cosmogrid - CNN, $\tau_v$ ' + f'{threshold_dark}, ' + r'$\tau_c$ ' + f'{threshold_bright}')
+    ax.set_xlabel(title.split('vs')[0].strip()) # + r' $\downarrow$')
+    ax.set_ylabel(title.split('vs')[1].strip()) #+ r' $\uparrow$')
+    ax.set_title(r'CosmoGrid - CNN, $\tau_v$ ' + f'{threshold_dark}, ' + r'$\tau_c$ ' + f'{threshold_bright}')
     # ax.set_ylim([0.4, 0.7])
     ax.grid(True)
 

@@ -13,3 +13,4 @@ CosmogridConfig = config_cosmogrid.CosmogridConfig
 from .utils import data_utils
 from . import user_study
 from . import tasks
+from . import utils

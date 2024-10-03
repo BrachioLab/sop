@@ -3,13 +3,21 @@ from exlib.evaluators.common import convert_idx_masks_to_bool
 import torch
 
 # best acc
-def get_acc(dataloader, explainer, method, device, k=0.1, eval_all=False):
+def get_acc(dataloader, explainer, method, device, k=0.1, eval_all=False, built_in=False, num_classes=1000, num_groups=20):
+    """
+    If built_in is True, then for built-in explainers, we use the logits from the explainer.
+    """
     method_list = method.split('_')
     explainer_name = method_list[0]
     best_corrects = []
     correct = 0
     total = 0
     corrects = []
+
+    if built_in:
+        explainer_names_builtin = ['sop', 'bagnet', 'backbone', 'xdnn']
+    else:
+        explainer_names_builtin = ['sop']
     with torch.no_grad():
         progress_bar_eval = tqdm(range(len(dataloader)))
         for bi, batch in enumerate(dataloader):
@@ -30,9 +38,34 @@ def get_acc(dataloader, explainer, method, device, k=0.1, eval_all=False):
             if attrs is not None:
                 attrs = attrs.to(device)
             
-            if explainer_name == 'sop':
-                explainer.k = k
-                logits = explainer(inputs)
+            if explainer_name in explainer_names_builtin:
+                if explainer_name in ['sop', 'backbone']:
+                    try:
+                        explainer.k = k
+                    except:
+                        pass
+                    logits = explainer(inputs)
+                    if not isinstance(logits, torch.Tensor):
+                        logits = logits.logits
+                elif explainer_name == 'bagnet':
+                    # use top 20 groups
+                    bsz = inputs.shape[0]
+                    multi_labels = torch.tensor([list(range(num_classes))]).to(inputs.device).expand(bsz, num_classes)
+                    expln = explainer(inputs.clone(), multi_labels.clone(), return_groups=True)
+                    mask_weights = expln.group_attributions.flatten(1, 2)
+                    sort_idxs = torch.argsort(mask_weights, dim=1, descending=True)
+                    sorted_mask_weights = torch.gather(mask_weights, dim=1, index=sort_idxs)
+                    logits = sorted_mask_weights[:,:num_groups].sum(1) # take top 20 masks
+                elif explainer_name == 'xdnn':
+                    bsz = inputs.shape[0]
+                    multi_labels = torch.tensor([list(range(num_classes))]).to(inputs.device).expand(bsz, num_classes)
+                    expln = explainer(inputs.clone(), multi_labels.clone(), return_groups=True)
+                    mask_weights = expln.attributions.mean(1).flatten(1, 2)
+                    topk = int(mask_weights.shape[1] * k)
+                    topk_mask_weights = torch.topk(mask_weights, topk, dim=1).values
+                    logits = topk_mask_weights.sum(1)
+                else:
+                    raise ValueError(f'Unsupported explainer: {explainer_name}')
             else:
                 # get_faithful_output
                 if explainer_name in ['xdnn', 'bagnet']:
@@ -46,6 +79,8 @@ def get_acc(dataloader, explainer, method, device, k=0.1, eval_all=False):
 
                 with torch.no_grad():
                     original_logits = explainer.model(inputs_norm)
+                if not isinstance(original_logits, torch.Tensor):
+                    original_logits = original_logits.logits
                 preds = torch.argmax(original_logits, dim=-1)
 
                 masks_all = []
@@ -53,7 +88,7 @@ def get_acc(dataloader, explainer, method, device, k=0.1, eval_all=False):
                     # Create a mask of size (28, 28) with values from 1 to 28*28
                     if method == 'bagnet':
                         print('recompute')
-                        expln = explainer(inputs, return_groups=True)
+                        expln = explainer(inputs[idx:idx+1], return_groups=True)
                         masks = expln.group_masks[0]
                         mask_weights = expln.group_attributions[0].flatten()
                     else:
@@ -80,17 +115,21 @@ def get_acc(dataloader, explainer, method, device, k=0.1, eval_all=False):
 
                 masks_all = torch.stack(masks_all, dim=0)
 
-                masked_inputs = masks_all[:,None] * inputs
-                # outputs = model(masked_inputs)
-                if explainer_name in ['xdnn', 'bagnet']:
-                    # inputs_norm = explainer.normalize(inputs)
-                    masked_inputs = masks_mini[:,None] * inputs_norm
+                masked_inputs = masks_all[:,None] * inputs_norm
+                if explainer_name in ['xdnn']: #, 'bagnet']:
+                    masked_inputs = masks_all[:,None] * inputs
+                    masked_inputs = explainer.normalize(masked_inputs)
+                elif explainer_name in ['bagnet']:
+                    inputs_norm = explainer.normalize(inputs)
+                    masked_inputs = masks_all[:,None] * inputs_norm
                 elif explainer_name in ['bcos']:
-                    # inputs_norm = explainer.preprocess(inputs)
-                    masked_inputs = masks_mini[:,None] * inputs_norm
+                    masked_inputs = masks_all[:,None] * inputs
+                    masked_inputs = explainer.preprocess(masked_inputs)
                 outputs = explainer.model(masked_inputs)
-                logits = outputs #.logits
-                # -- get faithful output end --
+                if not isinstance(outputs, torch.Tensor):
+                    logits = outputs.logits
+                else:
+                    logits = outputs #.logits
 
             preds = torch.argmax(logits, dim=-1)
 

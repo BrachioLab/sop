@@ -20,8 +20,8 @@ def get_k_pred(explainer, method, inputs, attrs, ins_steps, start, end, original
 
         # Create a mask of size (14, 14) with values from 1 to 14*14
         if method == 'bagnet':
-            print('recompute')
-            expln = explainer(inputs, return_groups=True)
+            # print('recompute')
+            expln = explainer(inputs[idx:idx+1], return_groups=True)
             masks = expln.group_masks[0]
             mask_weights = expln.group_attributions[0].flatten()
         else:
@@ -43,14 +43,41 @@ def get_k_pred(explainer, method, inputs, attrs, ins_steps, start, end, original
         mask_weights = mask_weights[sort_idxs]
 
         # Cumulative sum of sorted masks
-        cumulative_masks = torch.cumsum(masks, dim=0).bool().float()
-        if type(start) is int:
-            topks = torch.tensor(np.linspace(start, end, ins_steps), dtype=torch.int).to(masks.device) - 1
-        else:
-            topks = (torch.tensor(np.linspace(start, end, ins_steps), 
-                                  dtype=torch.float).to(masks.device) * 196).int() 
+        masks_cumsum = torch.cumsum(masks, dim=0).bool().float()
+        
+        
+        if method == 'bagnet':
+            # total_masks = masks_cumsum.shape[0]
+            total_pixels = masks_cumsum.shape[-1] * masks_cumsum.shape[-2]
+
+            start_new = start / end
+            end_new = 1.0
+
+            # if type(start) is int:
+            #     topks = torch.tensor(np.linspace(start, end, ins_steps), dtype=torch.int).to(masks.device) - 1
+            # else:
+            topks = (torch.tensor(np.linspace(start_new, end_new, ins_steps), 
+                                dtype=torch.float).to(masks.device) * total_pixels).int() 
             topks = topks - 1
-        masks_use = cumulative_masks[topks]
+            masks_cumsum_sum = masks_cumsum.sum((-1, -2))
+            # print('topks', topks)
+            # print('masks_cumsum_sum', masks_cumsum_sum)
+            # mask_indexs = []
+            # for topk in topks:
+            mask_indexs = torch.searchsorted(masks_cumsum_sum, topks)
+            # import pdb; pdb.set_trace()
+            mask_indexs = torch.clamp(mask_indexs, max=masks_cumsum.shape[0] - 1)
+                
+            topks = mask_indexs
+        else:
+            if type(start) is int:
+                topks = torch.tensor(np.linspace(start, end, ins_steps), dtype=torch.int).to(masks.device) - 1
+            else:
+                topks = (torch.tensor(np.linspace(start, end, ins_steps), 
+                                    dtype=torch.float).to(masks.device) * 196).int() 
+                topks = topks - 1
+
+        masks_use = masks_cumsum[topks]
 
         masks_all.append(masks_use)
 
@@ -71,12 +98,19 @@ def get_k_pred(explainer, method, inputs, attrs, ins_steps, start, end, original
         inputs_mini = inputs_repeat_reshape[mini_bi * mini_bsz:(mini_bi + 1)*mini_bsz]
         masks_mini = masks_all_reshape[mini_bi * mini_bsz:(mini_bi + 1)*mini_bsz]
         masked_inputs = masks_mini[:,None] * inputs_mini
-        if explainer_name in ['xdnn', 'bagnet']:
+        if explainer_name in ['xdnn']:
+            masked_inputs = explainer.normalize(masked_inputs)
+        if explainer_name in ['bagnet']:
             inputs_norm = explainer.normalize(inputs_mini)
             masked_inputs = masks_mini[:,None] * inputs_norm
+        #     if explainer_name == 'xdnn':
+        #         import pdb; pdb.set_trace()
+        # elif explainer_name in ['bagnet']:
+        #     import pdb; pdb.set_trace()
         elif explainer_name in ['bcos']:
-            inputs_norm = explainer.preprocess(inputs_mini)
-            masked_inputs = masks_mini[:,None] * inputs_norm
+            masked_inputs = explainer.preprocess(masked_inputs)
+            # inputs_norm = explainer.preprocess(inputs_mini)
+            # masked_inputs = masks_mini[:,None] * inputs_norm
         
         outputs = explainer.model(masked_inputs)
         
@@ -129,6 +163,7 @@ def insertion(model, original_model, backbone_model, processor, val_config,
 
     insertion_scores = []
     insertion_scores_curve = []
+    print('hi')
     for bi, batch in tqdm(enumerate(val_dataloader), total=len(val_dataloader)):
         if debug and bi >= int(debug):
             break
@@ -149,13 +184,24 @@ def insertion(model, original_model, backbone_model, processor, val_config,
                     # k = int(k * 196)
                     if type(start) is int and type(end) is int and type(ins_steps) is int:
                         k = int(k)
-                    model.k = k
+                        k  = k / end
+                    # print(" try", k, "----")
+
+                for k in tqdm(np.linspace(start, end, ins_steps)):
+                    # k = int(k * 196)
+                    if type(start) is int and type(end) is int and type(ins_steps) is int:
+                        k = int(k)
+                        k  = k / end
+                    # print(" hii", k, "----")
+                    model.k = min(k + 0.0001, 1.)
+                    # print(model.k)
                     # wrapped_backbone_model.model(inputs, output_hidden_states=True)
                     outputs = model(inputs, return_tuple=True, binary_threshold=-1, deletion=deletion)
                     logits = outputs.logits
                     preds = logits.argmax(-1)
                     probs = logits.softmax(-1)
                     ins_scores_bi.append(probs[range(len(original_preds)), preds]) #original_preds])
+                    # print(ins_scores_bi)
                 ins_scores_bi = torch.stack(ins_scores_bi, 0).transpose(0, 1)
                 # print('ins_scores_bi', ins_scores_bi.shape)
                 results = ins_scores_bi

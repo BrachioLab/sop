@@ -1,4 +1,4 @@
-for EXPLAINER_NAME in lime_20 shap_20 rise_20 intgrad gradcam archipelago fullgrad 
+for EXPLAINER_NAME in lime_20 shap_20 rise_20 intgrad gradcam archipelago fullgrad attn
 do
     echo "Running $EXPLAINER_NAME"
     python /shared_data0/weiqiuy/sop/src/sop/run/sparsity_imagenet_s.py "$EXPLAINER_NAME"

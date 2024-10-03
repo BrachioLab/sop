@@ -86,12 +86,12 @@ val_dataset, val_dataloader = sop.tasks.imagenet.get_dataset(val_config['dataset
 
 results_all = {}
 for k in tqdm(np.linspace(0.1, 1, 10)):
-    results = get_acc(val_dataloader, explainer, method, device, k=k, eval_all=True)
+    results = get_acc(val_dataloader, explainer, method, device, k=k, eval_all=True, built_in=True)
     results_all[k] = results
 
-save_dir = f'/shared_data0/weiqiuy/sop/results/sparsity/{val_config["dataset"]["name"]}/'
+save_dir = f'/shared_data0/weiqiuy/sop/results/sparsity/{val_config["dataset"]["name"]}'
 os.makedirs(save_dir, exist_ok=True)
 
 results_path = f'{save_dir}/{method}.pt'
 
-torch.save(results, results_path)
+torch.save(results_all, results_path)

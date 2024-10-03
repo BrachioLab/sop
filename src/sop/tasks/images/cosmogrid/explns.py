@@ -68,7 +68,7 @@ def get_explainer(original_model, backbone_model, explainer_name, device, num_sa
         from exlib.explainers.agi import AgiImageCls
         max_iter = 4
         topk = 5
-        explainer = AgiImageCls(original_model, max_iter=max_iter, topk=topk)
+        explainer = AgiImageCls(original_model, max_iter=max_iter, topk=topk, pred_mode='reg')
         param_str = f'n{max_iter}_k{topk}'
     elif explainer_name == 'ampe': # checked
         from exlib.explainers.ampe import AmpeImageCls

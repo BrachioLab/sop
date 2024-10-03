@@ -12,7 +12,11 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 from torch.utils.data import DataLoader, Subset
 import sys
-sys.path.append('/shared_data/weiqiuy/sop/lib/exlib/src')
+sys.path.append('/shared_data0/weiqiuy/sop/lib/exlib/src')
+
+sys.path.append('/shared_data0/weiqiuy/sop/src')
+
+from sop.tasks.images.imagenet import get_explainer
 
 # from exlib.modules.sop import SOPImageCls, SOPConfig, get_chained_attr
 
@@ -243,6 +247,8 @@ def transform(image):
 print(method)
 method_list = method.split('_')
 explainer_name = method_list[0]
+explainer = get_explainer(original_model, backbone_model, method.split('_')[0], device)
+
 if len(method_list) == 2:
     suffix = '_' + method_list[1]
 else:
@@ -253,7 +259,7 @@ else:
 # val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 # ATTR_VAL_DATA_DIR = f'../exps/imagenet_vit_1/attributions/{explainer_name}_5_pred{suffix}/val'
 
-ATTR_VAL_DATA_DIR = f'/shared_data/weiqiuy/sop/exps/imagenet_vit_1/attributions/vit_{explainer_name}_1_pred{suffix}/val'
+ATTR_VAL_DATA_DIR = f'/shared_data0/weiqiuy/sop/exps/imagenet_vit_1/attributions/vit_{explainer_name}_1_pred{suffix}/val'
 val_dataset = ImageFolderSubDataset(VAL_DATA_DIR, attr_dir=ATTR_VAL_DATA_DIR, transform=transform, 
                                     num_data=1, start_data=0)
 val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -286,6 +292,8 @@ def show_masks_save(img, masks, titles=None, cols=5, imgsize=3, save_path=None):
     plt.show()
 
 for bi, batch in tqdm(enumerate(val_dataloader)):
+    if bi > 30:
+        break
     if bi in [0, 10, 20, 30]:
         # break
 
@@ -299,27 +307,51 @@ for bi, batch in tqdm(enumerate(val_dataloader)):
             # expln = explainer(inputs, original_preds)
 
         # Get masks
+        if len(attrs.shape) == 5:
+            attrs = attrs.squeeze(-1)
         masks_all = []
         for idx in range(len(inputs)):
             # Create a mask of size (28, 28) with values from 1 to 28*28
-            cell_size = 14
-            image_size = 224
-            mask = torch.arange(1, cell_size*cell_size + 1, dtype=torch.int).reshape(cell_size, cell_size)
+            if method == 'bagnet':
+                print('recompute')
+                expln = explainer(inputs[idx:idx+1], return_groups=True)
+                masks = expln.group_masks[0]
+                mask_weights = expln.group_attributions[0].flatten()
+            else:
+                cell_size = 14
+                image_size = 224
+                mask = torch.arange(1, cell_size*cell_size + 1, dtype=torch.int).reshape(cell_size, cell_size)
 
-            # Resize the mask to (224, 224) without using intermediate floating point numbers
-            # This can be achieved by repeating each value in both dimensions to scale up the mask
-            scale_factor = image_size // cell_size  # Calculate scale factor
-            resized_mask = mask.repeat_interleave(scale_factor, dim=0).repeat_interleave(scale_factor, dim=1)
+                # Resize the mask to (224, 224) without using intermediate floating point numbers
+                # This can be achieved by repeating each value in both dimensions to scale up the mask
+                scale_factor = image_size // cell_size  # Calculate scale factor
+                resized_mask = mask.repeat_interleave(scale_factor, dim=0).repeat_interleave(scale_factor, dim=1)
 
-            masks = convert_idx_masks_to_bool(resized_mask[None]).to(device)
-            mask_weights = (masks.to(device) * attrs[idx][0:1].to(device)).sum(-1).sum(-1).to(device)
+                masks = convert_idx_masks_to_bool(resized_mask[None]).to(device)
+                mask_weights = (masks.to(device) * attrs[idx][0:1].to(device)).sum(-1).sum(-1).to(device)
             sort_idxs = torch.argsort(mask_weights).flip(-1)
             masks = masks[sort_idxs]
             mask_weights = mask_weights[sort_idxs]
 
-            topk = int(masks.shape[0] * k)
-            masks_use = masks[:topk]
-            mask = masks_use.sum(0)
+            if method == 'bagnet':
+                topk = int(masks.shape[-1] * masks.shape[-2] * k)
+                masks_cumsum = masks.cumsum(dim=0).bool().float()
+                # print('masks_cumsum', masks_cumsum.shape)
+                # Calculate the sum along the last two dimensions
+                masks_cumsum_sum = masks_cumsum.sum((-1, -2))
+                # print('masks_cumsum_sum', masks_cumsum_sum.shape)
+
+                # Find the index where the sum first exceeds topk
+                mask_index = torch.searchsorted(masks_cumsum_sum, topk)
+
+                # Ensure we don't exceed the tensor's first dimension
+                mask_index = torch.clamp(mask_index, max=masks_cumsum.shape[0] - 1)
+                
+                mask = masks_cumsum[mask_index]
+            else:
+                topk = int(masks.shape[0] * k)
+                masks_use = masks[:topk]
+                mask = masks_use.sum(0).bool().float()
 
             masks_all.append(mask)
         masks_all = torch.stack(masks_all, dim=0)
@@ -334,7 +366,7 @@ for bi, batch in tqdm(enumerate(val_dataloader)):
         logits = outputs.logits
         preds = logits.argmax(-1)
         preds = torch.argmax(outputs.logits, dim=-1)
-        root_dir = '/shared_data/weiqiuy/sop/neurips2024_user_study2'
+        root_dir = '/shared_data0/weiqiuy/sop/notebooks/neurips2024_user_study2'
         save_dir = f'{root_dir}/imgs'
         save_dir_label = f'{root_dir}/labels'
         os.makedirs(save_dir, exist_ok=True)
@@ -349,8 +381,12 @@ for bi, batch in tqdm(enumerate(val_dataloader)):
             # plt.axis('off')
             # plt.savefig(os.path.join(save_dir, f'{bi}_{idx}_original.png'), dpi=300, bbox_inches='tight', pad_inches=0)
             # plt.show()
+            img_save_path = os.path.join(save_dir, f'{bi}_{idx}_{explainer_name}.png')
+            # print('img_save_path', img_save_path)
             show_masks_save(denormed_img[0], masks_all[idx:idx+1], 
-                            save_path=os.path.join(save_dir, f'{bi}_{idx}_{explainer_name}.png'), cols=1)
+                            save_path=img_save_path, cols=1)
             # show_masks_weights_save(inputs, outputs, preds, idx=idx, save_path=os.path.join(save_dir, f'{bi}_{idx}_gradcam.png'))
-            with open(os.path.join(save_dir_label, f'{bi}_{idx}_{explainer_name}.txt'), 'wt') as output_file:
+            label_save_path = os.path.join(save_dir_label, f'{bi}_{idx}_{explainer_name}.txt')
+            # print('label_save_path', label_save_path)
+            with open(label_save_path, 'wt') as output_file:
                 output_file.write(backbone_config.id2label[preds[idx].item()].split(',')[0])

@@ -17,7 +17,7 @@ explainer_names = [
     'fullgrad',
     # 'attn', # don't work with non transformer
     'mfaba',
-    # 'agi', # only have implementation for classification
+    'agi',
     'ampe',
     # 'bcos',
     # 'xdnn',
