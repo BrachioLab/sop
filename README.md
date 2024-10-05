@@ -24,6 +24,19 @@ Also need to install `dev` branch of [`exlib`](https://github.com/BrachioLab/exl
 
 ## Usage
 
+### Demos
+Here we show how to use pretrained SOP and train your own SOP models for ImageNet and CosmoGrid
+1. [ImageNet](https://github.com/BrachioLab/sop/blob/main/notebooks/demos/imagenet.ipynb)
+2. [CosmoGrid](https://github.com/BrachioLab/sop/blob/main/notebooks/demos/cosmogrid.ipynb)
+
+### Evaluation
+Here we show how we evaluate. The actual scripts we run are in `src/sop/run`.
+1. [ImageNet Accuracy](https://github.com/BrachioLab/sop/blob/main/notebooks/metrics/imagenet_s_acc_purity.ipynb)
+2. [ImageNet Purity](https://github.com/BrachioLab/sop/blob/main/notebooks/metrics/imagenet_s_purity.ipynb)
+3. [ImageNet Insertion Deletion](https://github.com/BrachioLab/sop/blob/main/notebooks/metrics/ins_del_mod.ipynb)
+4. [ImageNet Sparsity](https://github.com/BrachioLab/sop/blob/main/notebooks/metrics/sparsity.ipynb)
+5. [ImageNet Fidelity](https://github.com/BrachioLab/sop/blob/main/notebooks/metrics/fidelity.ipynb)
+6. [Cosmogrid Accuracy and Purity](https://github.com/BrachioLab/sop/blob/main/notebooks/metrics/cosmogrid_acc_purity.ipynb)
 
 ## Citation
 ```
