@@ -7,8 +7,8 @@ Official implementation for "Sum-of-Parts Models: Faithful Attributions for Grou
 Authors: Weiqiu You, Helen Qu, Marco Gatti, Bhuvnesh Jain, Eric Wong
 
 ## TODO
-- [ ] Release updated code - by Oct 1st 2024
-- [ ] Update arxiv - by Oct 1st 2024
+- [x] Release updated code - Oct 2nd 2024
+- [x] Update arxiv - Oct 5th 2024
 
 ## Prerequisite
 
@@ -24,16 +24,4 @@ To do experiments on ImageNet first 10 classes, create a folder `data/imagenet_m
 
 ## Usage
 
-### Training
 
-To train SOP for 10 classes on ImageNet on the Huggingface's Vision Transformer `google/vit-base-patch16-224`, first download our [model](https://drive.google.com/file/d/1WDUSvGtBwyGq5PYFke6HvR8fWK8NghQb/view?usp=drive_link) for the first 10 classes for ImageNet.
-
-```
-python scripts/run/train_imagenet_m.py
-```
-
-or notebook `notebooks/train.ipynb`.
-
-### Evaluation
-
-To use the trained SOP wrapped model at inference time, checkout `notebooks/eval.ipynb`.
