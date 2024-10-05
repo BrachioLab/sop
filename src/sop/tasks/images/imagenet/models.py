@@ -70,7 +70,7 @@ def get_model(
             state_dict = torch.load(os.path.join(sop_model_name, 
                                             'checkpoint.pth'))
             print('Loaded step', state_dict['step'])
-            model.load_state_dict(state_dict['model'], strict=False)
+            model.load_state_dict(state_dict['model']) #, strict=False)
     else:
         raise ValueError(f'Unsupported model type: {model_type}')
 
