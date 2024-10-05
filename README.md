@@ -2,7 +2,7 @@
 
 \[[Paper](https://arxiv.org/abs/2310.16316)\] \[[Blog](https://debugml.github.io/sum-of-parts/)\]
 
-Official implementation for "Sum-of-Parts Models: Faithful Attributions for Groups of Features".
+Official implementation for "Sum-of-Parts: Faithful Attributions for Groups of Features".
 
 Authors: Weiqiu You, Helen Qu, Marco Gatti, Bhuvnesh Jain, Eric Wong
 
@@ -20,8 +20,20 @@ conda activate sop
 pip install -r requirements.txt
 ```
 
-To do experiments on ImageNet first 10 classes, create a folder `data/imagenet_m` with subfolders `data/imagenet_m/train` and `data/imagenet_m/val`, download data from ImageNet and put the 10 classes of data in subfolders in these folders.
+Also need to install `dev` branch of [`exlib`](https://github.com/BrachioLab/exlib/tree/dev)
 
 ## Usage
 
 
+## Citation
+```
+@misc{you2024sumofpartsfaithfulattributionsgroups,
+      title={Sum-of-Parts: Faithful Attributions for Groups of Features}, 
+      author={Weiqiu You and Helen Qu and Marco Gatti and Bhuvnesh Jain and Eric Wong},
+      year={2024},
+      eprint={2310.16316},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2310.16316}, 
+}
+```
