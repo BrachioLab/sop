@@ -12,6 +12,7 @@ Authors: Weiqiu You, Helen Qu, Marco Gatti, Bhuvnesh Jain, Eric Wong
 
 ## Prerequisite
 
+### Conda
 To set up the environment:
 
 ```
@@ -20,7 +21,11 @@ conda activate sop
 pip install -r requirements.txt
 ```
 
-Also need to install `dev` branch of [`exlib`](https://github.com/BrachioLab/exlib/tree/dev)
+### Docker
+Alternatively, you can use the docker image `fallcat/xai:latest`
+
+### Exlib
+No matter which of the above options you chose, you need to install `dev` branch of [`exlib`](https://github.com/BrachioLab/exlib/tree/dev)
 
 ## Usage
 
