@@ -25,7 +25,7 @@ pip install -r requirements.txt
 Alternatively, you can use the docker image `fallcat/xai:latest`
 
 ### Exlib
-No matter which of the above options you chose, you need to install `dev` branch of [`exlib`](https://github.com/BrachioLab/exlib/tree/dev)
+No matter which of the above options you chose, you need to install [`exlib`](https://github.com/BrachioLab/exlib)
 
 ## Usage
 
