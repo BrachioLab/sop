@@ -6,10 +6,13 @@ import numpy as np
 from ..utils import get_explainer, get_dataset
 import torch
 import math
+from ..utils.image_utils import occlude_input_with_random_pixels
 
 
 def get_k_pred(explainer, method, inputs, attrs, ins_steps, start, end, original_preds, 
-               use_original_pred=False, deletion=False, return_all=False):
+               use_original_pred=False, deletion=False, return_all=False, occlusion_type='zero'):
+    assert occlusion_type in ['zero', 'histogram']
+    
     device = inputs.device
     method_list = method.split('_')
     explainer_name = method_list[0]
@@ -97,20 +100,38 @@ def get_k_pred(explainer, method, inputs, attrs, ins_steps, start, end, original
         # Get masked output
         inputs_mini = inputs_repeat_reshape[mini_bi * mini_bsz:(mini_bi + 1)*mini_bsz]
         masks_mini = masks_all_reshape[mini_bi * mini_bsz:(mini_bi + 1)*mini_bsz]
-        masked_inputs = masks_mini[:,None] * inputs_mini
-        if explainer_name in ['xdnn']:
-            masked_inputs = explainer.normalize(masked_inputs)
-        if explainer_name in ['bagnet']:
-            inputs_norm = explainer.normalize(inputs_mini)
-            masked_inputs = masks_mini[:,None] * inputs_norm
-        #     if explainer_name == 'xdnn':
-        #         import pdb; pdb.set_trace()
-        # elif explainer_name in ['bagnet']:
-        #     import pdb; pdb.set_trace()
-        elif explainer_name in ['bcos']:
-            masked_inputs = explainer.preprocess(masked_inputs)
-            # inputs_norm = explainer.preprocess(inputs_mini)
-            # masked_inputs = masks_mini[:,None] * inputs_norm
+
+        if occlusion_type == 'zero':
+            masked_inputs = masks_mini[:,None] * inputs_mini
+            if explainer_name in ['xdnn']:
+                masked_inputs = explainer.normalize(masked_inputs)
+            if explainer_name in ['bagnet']:
+                inputs_norm = explainer.normalize(inputs_mini)
+                masked_inputs = masks_mini[:,None] * inputs_norm
+            #     if explainer_name == 'xdnn':
+            #         import pdb; pdb.set_trace()
+            # elif explainer_name in ['bagnet']:
+            #     import pdb; pdb.set_trace()
+            elif explainer_name in ['bcos']:
+                masked_inputs = explainer.preprocess(masked_inputs)
+                # inputs_norm = explainer.preprocess(inputs_mini)
+                # masked_inputs = masks_mini[:,None] * inputs_norm
+        elif occlusion_type == 'histogram':
+            masked_inputs = inputs_mini.clone()
+            
+            masked_inputs = occlude_input_with_random_pixels(masked_inputs, masks_mini)
+
+            if explainer_name in ['xdnn']:
+                masked_inputs = explainer.normalize(masked_inputs)
+            if explainer_name in ['bagnet']:
+                inputs_norm = explainer.normalize(inputs_mini)
+
+                masked_inputs = occlude_input_with_random_pixels(inputs_norm, masks_mini)
+
+            elif explainer_name in ['bcos']:
+                masked_inputs = explainer.preprocess(masked_inputs)
+        else:
+            raise ValueError(f'Unsupported occlusion type: {occlusion_type}')
         
         outputs = explainer.model(masked_inputs)
         
@@ -132,7 +153,7 @@ def insertion(model, original_model, backbone_model, processor, val_config,
               method, ins_steps, start, end, 
               # use_original_pred=False, 
               debug=False, 
-              deletion=False, return_all=False):
+              deletion=False, return_all=False, occlusion_type='zero'):
     device = backbone_model.device
     print(method)
     method_list = method.split('_')
@@ -163,7 +184,6 @@ def insertion(model, original_model, backbone_model, processor, val_config,
 
     insertion_scores = []
     insertion_scores_curve = []
-    print('hi')
     for bi, batch in tqdm(enumerate(val_dataloader), total=len(val_dataloader)):
         if debug and bi >= int(debug):
             break
@@ -196,7 +216,7 @@ def insertion(model, original_model, backbone_model, processor, val_config,
                     model.k = min(k + 0.0001, 1.)
                     # print(model.k)
                     # wrapped_backbone_model.model(inputs, output_hidden_states=True)
-                    outputs = model(inputs, return_tuple=True, binary_threshold=-1, deletion=deletion)
+                    outputs = model(inputs, return_tuple=True, binary_threshold=-1, deletion=deletion, occlusion_type=occlusion_type)
                     logits = outputs.logits
                     preds = logits.argmax(-1)
                     probs = logits.softmax(-1)
@@ -222,7 +242,7 @@ def insertion(model, original_model, backbone_model, processor, val_config,
                 original_preds = torch.argmax(original_logits, dim=-1)
 
                 results = get_k_pred(explainer, method, inputs, attrs, ins_steps, start, end, original_preds, 
-                                     deletion=deletion, return_all=return_all)
+                                     deletion=deletion, return_all=return_all, occlusion_type=occlusion_type)
             insertion_scores.extend(results.mean(1).tolist())
             insertion_scores_curve.extend(results.tolist())
         
@@ -234,7 +254,8 @@ def insertion(model, original_model, backbone_model, processor, val_config,
     return insertion_scores, insertion_scores_curve, insertion_scores_perc
 
 def get_ins_del_perc(val_config, original_model, backbone_model, model, processor,
-                     method, ins_steps=10, start=0.1, end=1.0, deletion=False, debug=False, vis=False):
+                     method, ins_steps=10, start=0.1, end=1.0, deletion=False, debug=False, vis=False, occlusion_type='zero'):
+    assert occlusion_type in ['zero', 'histogram']
     ins_scores, ins_scores_curve, insertion_scores_perc = insertion(model, 
                                                                           original_model, 
                                                                           backbone_model, 
@@ -242,7 +263,7 @@ def get_ins_del_perc(val_config, original_model, backbone_model, model, processo
                                                                           val_config,
                                                                           method, 
                                              ins_steps=ins_steps, start=start, end=end, 
-                                             debug=debug, return_all=True, deletion=deletion)
+                                             debug=debug, return_all=True, deletion=deletion, occlusion_type=occlusion_type)
     if vis:
         import matplotlib.pyplot as plt
         plt.figure()

@@ -1,0 +1,1 @@
+from .text_vis import show_some_text_egs

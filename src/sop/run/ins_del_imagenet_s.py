@@ -38,6 +38,16 @@ if len(sys.argv) > 2:
 else:
     step_size = 'large'
 
+if len(sys.argv) > 3:
+    occlusion_type = sys.argv[3]
+else:
+    occlusion_type = 'zero'
+print('occlusion_type', occlusion_type)
+
+if len(sys.argv) > 4:
+    debug = bool(sys.argv[4])
+    print('debug', debug)
+
 if step_size == 'small':
     step_size_suffix = '_small'
     ins_steps=196
@@ -48,6 +58,16 @@ else:
     ins_steps=10
     start=0.1
     end=1.0
+
+if occlusion_type == 'zero':
+    occlusion_suffix = ''
+else:
+    occlusion_suffix = f'_{occlusion_type}'
+
+if debug:
+    debug_suffix = '_debug'
+else:
+    debug_suffix = ''
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 sop.utils.seed_all(42)
@@ -108,11 +128,11 @@ model = model.to(device)
 model.eval();
 
 results_ins = get_ins_del_perc(val_config, original_model, backbone_model, model, processor,
-                     method, ins_steps=ins_steps, start=start, end=end, debug=debug)
+                     method, ins_steps=ins_steps, start=start, end=end, debug=debug, occlusion_type=occlusion_type)
 results_del = get_ins_del_perc(val_config, original_model, backbone_model, model, processor,
-                     method, ins_steps=ins_steps, start=start, end=end, debug=debug, deletion=True)
+                     method, ins_steps=ins_steps, start=start, end=end, debug=debug, deletion=True, occlusion_type=occlusion_type)
 
-save_dir = f'/shared_data0/weiqiuy/sop/results/ins_del{step_size_suffix}/{val_config["dataset"]["name"]}/'
+save_dir = f'/shared_data0/weiqiuy/sop/results/ins_del{step_size_suffix}{occlusion_suffix}{debug_suffix}/{val_config["dataset"]["name"]}/'
 os.makedirs(save_dir, exist_ok=True)
 
 results_path = f'{save_dir}/{method}.pt'
@@ -123,3 +143,4 @@ results = {
 }
 
 torch.save(results, results_path)
+print('Saved results to', results_path)
