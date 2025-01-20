@@ -4,6 +4,7 @@ from exlib.modules.sop_text import gaussian_blur_1d_mask
 import os
 import torch
 from ..tasks.texts.base.explns import get_attr_from_explainer
+from ..tasks.texts.multirc import get_topk_mask, get_attr
 
 
 def get_acc_text(
@@ -12,7 +13,8 @@ def get_acc_text(
     # model, original_model, original_model_softmax, 
             # backbone_model, 
             processor, dataloader, explainer_name, 
-            suffix='', kernel_size=1, sigma=1, from_save=True, k=0.2, exp_dir='/shared_data0/weiqiuy/sop/exps/multirc_bert/',
+            suffix='', kernel_size=1, sigma=1, from_save=True, k=0.2, 
+            exp_dir='/shared_data0/weiqiuy/sop/exps/multirc_bert/',
             device='cuda', debug=True):
     # model = wrapped_backbone_model
     criterion = nn.CrossEntropyLoss()
@@ -27,6 +29,7 @@ def get_acc_text(
     attr_dir = os.path.join(exp_dir, f'attributions/{explainer_name}{suffix}')
 
     not_exist = []
+    corrects = []
 
     with torch.no_grad():
         total_loss = 0.0
@@ -44,6 +47,8 @@ def get_acc_text(
                 if bi % 10 != 0:
                     progress_bar_eval.update(1)
                     continue
+                if bi > 1000:
+                    break
             # Now you can use `inputs` and `labels` in your training loop.
             if not isinstance(batch['input_ids'], torch.Tensor):
                 inputs = torch.stack(batch['input_ids']).transpose(0, 1).to(device)
@@ -85,6 +90,7 @@ def get_acc_text(
                         'attention_mask': attention_mask
                     }
                 }
+                explainer.k = k
                 outputs = explainer(return_tuple=True, **inputs_dict)
                 logits = outputs.logits
                 preds = torch.argmax(logits, dim=-1)
@@ -132,6 +138,9 @@ def get_acc_text(
                         continue
                     attr_results = torch.load(attr_filepath)
                     attributions = attr_results['expln'].attributions
+                    if attributions.shape[1] == 1:
+                        attributions = get_attr(explainer, explainer_name, batch, original_model, 
+                                processor, device=device)
                     assert (attr_results['input'] == inputs).all()
 
                 # Calculate the number of masks
@@ -214,6 +223,7 @@ def get_acc_text(
             total_nnz += actual_nnz.item()
             
             correct += (preds[0] == labels).item()
+            corrects.extend((preds == labels).view(-1).cpu().numpy().tolist())
             total += 1
             progress_bar_eval.update(1)
     print('number of not exist files', len(not_exist))
@@ -221,6 +231,8 @@ def get_acc_text(
     print(explainer_name, acc)
     result = {
         'val_acc': acc,
-        'val_nnz': total_nnz / total
+        'val_nnz': total_nnz / total,
+        'acc': acc,
+        'corrects': corrects
     }
     return result

@@ -26,11 +26,30 @@ def create_binary_mask(spans, text_length):
     return mask
 
 def get_purity_results(explainer, explainer_name, batch, raw_batch, original_model, 
-        tokenizer, verbose=0, device='cuda', best_only=False):
+        tokenizer, verbose=0, device='cuda', best_only=False, idx=None,
+        exp_dir='/shared_data0/weiqiuy/sop/exps/multirc_bert/', from_save=True, suffix=''):
     """
     each value in batch is size (N, L)
     """
-    attr = get_attr(explainer, explainer_name, batch, original_model, tokenizer, device=device)
+    if idx is not None:
+        attr_dir = os.path.join(exp_dir, f'attributions/{explainer_name}{suffix}')
+        filename = f'{idx}.pt'
+        attr_filepath = os.path.join(attr_dir, filename)
+        # print('idx', idx)
+        # attr = get_attr(explainer, explainer_name, batch, original_model, tokenizer, device=device)
+        if os.path.exists(attr_filepath):
+            attr = torch.load(attr_filepath)['expln'].attributions
+            # print('attr', attr.shape, 'idx', idx)
+            if attr.shape[1] == 1:
+                attr = get_attr(explainer, explainer_name, batch, original_model, tokenizer, device=device)
+                # print('attr new', attr.shape)
+                # import pdb; pdb.set_trace()
+        else:
+            attr = get_attr(explainer, explainer_name, batch, original_model, tokenizer, device=device)
+            # os.makedirs(attr_dir, exist_ok=True)
+            # torch.save(attr, attr_filepath)
+    else:
+        attr = get_attr(explainer, explainer_name, batch, original_model, tokenizer, device=device)
 
     # get gold evidence indicies
     # Example usage:
@@ -117,17 +136,23 @@ def get_purity_results(explainer, explainer_name, batch, raw_batch, original_mod
     
 
 def get_acc_purity_text(explainer, explainer_name, original_model, tokenizer, val_dataset, 
-        val_dataset_raw, device='cuda', debug=False, best_only=False):
+        val_dataset_raw, device='cuda', debug=False, best_only=False, from_save=True, suffix='', 
+        exp_dir='/shared_data0/weiqiuy/sop/exps/multirc_bert/'):
     purity_results_all = defaultdict(list)
     for idx in tqdm(range(len(val_dataset))):
         if debug:
             if idx % 10 != 0:
                 continue
+            # if idx < 650:
+            #     continue
+            if idx > 1000:
+                break
         batch = val_dataset[idx]
         batch = {k: torch.tensor(v)[None].to(device) for k, v in batch.items()}
         raw_batch = val_dataset_raw[idx]
         purity_results_list = get_purity_results(explainer, explainer_name, batch, raw_batch, original_model, 
-                                                 tokenizer, device=device, best_only=best_only)
+                                                 tokenizer, device=device, best_only=best_only, idx=idx, 
+                                                 from_save=from_save, exp_dir=exp_dir, suffix=suffix)
         # purity_results
         for purity_results in purity_results_list:
             for k, v in purity_results.items():

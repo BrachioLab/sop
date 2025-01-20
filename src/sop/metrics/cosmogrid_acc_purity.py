@@ -43,7 +43,7 @@ def sum_weights_for_unique_masks(masks, masks_weights, logits): #, poolers):
 
 
 
-def get_masks_from_mask(attribution, explainer_name, model=None, k=0.2):
+def get_masks_from_mask(attribution, explainer_name, k=0.2):
     device = attribution.device
     cell_size = 11
     image_size = 66
@@ -61,6 +61,8 @@ def get_masks_from_mask(attribution, explainer_name, model=None, k=0.2):
     masks = masks[sort_idxs]
     mask_weights = mask_weights[sort_idxs]
     
+    # print('masks.shape[0]', masks.shape[0])
+    # print('k', k)
     topk = int(masks.shape[0] * k)
     masks_use = masks[:topk]
     mask = masks_use.sum(0)
@@ -70,7 +72,11 @@ def get_masks_from_mask(attribution, explainer_name, model=None, k=0.2):
 
 def get_acc_frac_bright_dark(explainer_name, backbone_model, original_model, model, dark_thresh=0, bright_thresh=3, k=0.2,
                             root_dir='/shared_data0/weiqiuy/sop/exps/cosmogrid_cnn/attributions/', data_size=1000, skip=False, VERBOSE=0):
+    # print('start: k', k)
     input_dir = f'{root_dir}/{explainer_name}'
+    if explainer_name == 'sop':
+        input_dir = f'{root_dir}/shap_20_test' # fake, only to load the input
+    
     BRIGHT_THRESHOLD = bright_thresh
     DARK_THRESHOLD = dark_thresh
 
@@ -93,6 +99,49 @@ def get_acc_frac_bright_dark(explainer_name, backbone_model, original_model, mod
         # print(filename)
         if skip and (fi // 16) % 10 != 0:
             continue
+
+        if explainer_name == 'sop':
+            # didn't implement computing purity here.
+            # fake_input_dir = f'{root_dir}/shap_20_test'
+            try:
+                data = torch.load(os.path.join(input_dir, filename), map_location=device)
+            except:
+                print('failed,', filename)
+                continue
+            image = data['image']
+            label = data['label']
+            omega_mask = data['omega_mask']
+            sigma_mask = data['sigma_mask']
+
+            # print('image', image.shape)
+            # print('omega_mask', omega_mask.shape)
+            # print('sigma_mask', sigma_mask.shape)
+            
+            # loss_curr = []
+            # for k in ks:
+                
+            model.k = k
+            outputs = model(image[None], separate_scale=True)
+            logits = outputs
+            loss = criterion(logits, label)
+            # loss_curr.append(loss)
+            #     # if fi == 0:
+            #     #     print('k', k)
+            #     #     print('logits', logits)
+            #     #     print('label', label)
+            # loss_curr = torch.stack(loss_curr)
+            if fi == 0:
+                print(loss)
+
+            # loss_all.append(loss_curr)
+            # loss_original.append(criterion(data['original_logits'], label))
+
+            # loss = criterion(masked_logits, label)
+            loss_all.append(loss.item())
+            loss_original.append(criterion(logits, label).item())
+
+            continue
+
         try:
             data = torch.load(os.path.join(input_dir, filename), map_location=device)
         except:
@@ -108,8 +157,8 @@ def get_acc_frac_bright_dark(explainer_name, backbone_model, original_model, mod
         logits = data['original_logits']
         omega_mask = data['omega_mask']
         sigma_mask = data['sigma_mask']
-        omega_masks, omega_mask_weights, omega_mask_use = get_masks_from_mask(omega_mask, explainer_name)
-        sigma_masks, sigma_mask_weights, sigma_mask_use = get_masks_from_mask(sigma_mask, explainer_name)
+        omega_masks, omega_mask_weights, omega_mask_use = get_masks_from_mask(omega_mask, explainer_name, k=k)
+        sigma_masks, sigma_mask_weights, sigma_mask_use = get_masks_from_mask(sigma_mask, explainer_name, k=k)
 
         omega_mask = omega_mask_use[None]
         sigma_mask = sigma_mask_use[None]
@@ -128,7 +177,7 @@ def get_acc_frac_bright_dark(explainer_name, backbone_model, original_model, mod
         frac_brights = []
         frac_darks = []
         for i in range(len(unique_masks)):
-            k = tuple([filename, i])
+            # key = tuple([filename, i])
             img, label, mask, mask_weight, pred = image, label, unique_masks[i], \
                         torch.tensor([1,0]) if i == 0 else torch.tensor([0,1]), logits
             # print(mask.sum(), 66*66)

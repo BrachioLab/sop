@@ -2,6 +2,7 @@ from exlib.explainers.lime import LimeTextCls
 from exlib.explainers.shap import ShapTextCls
 from exlib.explainers.rise import RiseTextCls
 from exlib.explainers.intgrad import IntGradTextCls
+from exlib.explainers.gradcam import GradCAMTextCls
 from exlib.explainers.archipelago import ArchipelagoTextCls
 from exlib.explainers.idg import IDGTextCls
 from exlib.explainers.pls import PLSTextCls
@@ -56,6 +57,12 @@ def get_explainer(original_model, original_model_softmax, backbone_model, proces
         explainer = IntGradTextCls(original_model_softmax, projection_layer=projection_layer, 
             num_steps=num_samples).to(device)
         param_str = f'n{num_samples}'
+    elif explainer_name == 'gradcam':
+        explainer = GradCAMTextCls(original_model_softmax, projection_layer,
+                                  [original_model_softmax.model.bert.encoder.layer[-1].attention.output.LayerNorm])
+    elif explainer_name == 'fullgrad':
+        from exlib.explainers.fullgrad import FullGradTextCls
+        explainer = FullGradTextCls(original_model_softmax, projection_layer=projection_layer).to(device)
     elif explainer_name == 'archipelago':
         explainer = ArchipelagoTextCls(backbone_model).to(device)
     elif explainer_name == 'idg':
@@ -64,6 +71,24 @@ def get_explainer(original_model, original_model_softmax, backbone_model, proces
         explainer = PLSTextCls(backbone_model, processor).to(device)
     elif explainer_name == 'attn':
         explainer = AttnTextCls(backbone_model).to(device)
+    elif explainer_name == 'mfaba':
+        from exlib.explainers.mfaba import MfabaTextCls
+        explainer = MfabaTextCls(original_model_softmax, projection_layer)
+        # mfaba_expln = mfaba_explainer(inputs, labels) #, x_kwargs=kwargs)
+    elif explainer_name == 'agi':
+        from exlib.explainers.agi import AgiTextCls
+        max_iter = 4
+        topk = 5
+        explainer = AgiTextCls(original_model_softmax, projection_layer,
+                                    max_iter=max_iter, topk=topk)
+        # agi_expln = agi_explainer(inputs) #, labels) #, x_kwargs=kwargs)
+    elif explainer_name == 'ampe':
+        from exlib.explainers.ampe import AmpeTextCls
+        N = 5
+        num_steps = 4
+        explainer = AmpeTextCls(original_model_softmax, projection_layer,
+                                    N=N, num_steps=num_steps)
+        # ampe_expln = ampe_explainer(inputs, labels) #, x_kwargs=kwargs)
     else:
         raise ValueError('Invalid explainer name' + explainer_name)
     explainer = explainer.to(device)
@@ -75,7 +100,7 @@ def get_explainer(original_model, original_model_softmax, backbone_model, proces
 
 def get_attr_from_explainer(explainer, explainer_name, inputs, preds, processor, kwargs={}, device='cuda',
         return_expln=False):
-    if explainer_name in ['lime']:
+    if explainer_name in ['lime', 'mfaba', 'agi', 'ampe', 'fullgrad', 'gradcam']:
         expln = explainer(inputs, preds)
     elif explainer_name in ['shap', 'idg']:
         inputs_raw = [processor.decode(input_ids_i).replace('[CLS]', '').replace('[PAD]', '').strip() 
@@ -117,7 +142,6 @@ def get_expln_all_classes(original_model, inputs, explainer, num_classes, explai
     probs = logits[:, :num_classes].softmax(-1)
     
     return expln, probs
-
 
 
 def get_attr(explainer, explainer_name, batch, original_model, processor, device='cuda', 
@@ -242,7 +266,11 @@ def get_topk_mask(batch, attributions, k=0.2, kernel_size=1, sigma=1, add_token_
     # print('mask', mask.dtype)
     # print('mask.float()', mask.float().dtype)
     # Use the mask to set the top k values in masks_all to 1
-    masks_all.scatter_(1, indices, mask.float())
+    try:
+        masks_all.scatter_(1, indices, mask.float())
+    except:
+        import pdb; pdb.set_trace()
+        masks_all.scatter_(1, indices, mask.float())
 
     if add_token_type_ids:
         # Add the token ids to the masks

@@ -81,7 +81,7 @@ WrappedBackboneOutput = namedtuple("WrappedBackboneOutput",
 
 
 class WrappedModel(nn.Module):
-    def __init__(self, model, output_type='tuple', num_patch=14, layer=-1):
+    def __init__(self, model, output_type='tuple', num_patch=14, layer=-2):
         super().__init__()
         assert output_type in ['tuple', 'logits', 'hidden_states']
         self.model = model
@@ -101,11 +101,26 @@ class WrappedModel(nn.Module):
             outputs = self.model(inputs, output_hidden_states=True)
             return outputs.hidden_states[self.layer]
 
-def get_wrapped_models(model, config):
+def get_wrapped_models(model, config, wrap_proj=False, backbone_layer=-2):
     wrapped_model = WrappedModel(model, output_type='tuple')
     class_weights = get_chained_attr(wrapped_model, config.finetune_layers[0]).weight #.clone().to(device)
-    projection_layer = WrappedModel(model, output_type='hidden_states')
+    projection_layer = WrappedModel(model, output_type='hidden_states', layer=backbone_layer)
     return wrapped_model, class_weights, projection_layer
+# def get_wrapped_models(model, config, wrap_proj=False):
+#     if wrap_proj:
+#         wrapped_model = WrappedModel(model, output_type='tuple')
+#     else:
+#         wrapped_model = model
+#     class_weights = get_chained_attr(wrapped_model, config.finetune_layers[0]).weight #.clone().to(device)
+#     projection_layer = WrappedModel(model, output_type='hidden_states')
+#     # if wrap_proj:
+#     #     projection_layer = WrappedModel(model, output_type='hidden_states')
+#     #     # projection_layer = WrappedModel(wrapped_model, output_type='hidden_states')
+#     # else:
+#     #     projection_layer = model
+#         # projection_layer = WrappedModel(model, output_type='hidden_states')
+#     return wrapped_model, class_weights, projection_layer
+
 
 def get_wrapped_model(model, config):
     wrapped_model = WrappedModel(model, output_type='logits')
@@ -119,6 +134,7 @@ def get_model(
     sop_model_name='/shared_data0/weiqiuy/sop/notebooks/exps/cosmogrid_lr5e-06_tgtnnz0.2_gg0.0600_gs10.0000_ft_identify_fixk_scratch_ks1_segpatch_4h/best',
     backbone_layer=-2,
     eval_mode=False,
+    wrap_proj=False
     ):
     # sop model
     if sop_model_name is not None:
@@ -166,10 +182,12 @@ def get_model(
 
     wrapped_backbone_model, class_weights, projection_layer = get_wrapped_models(
         backbone_model,
-        config
+        config,
+        wrap_proj=wrap_proj,
+        backbone_layer=backbone_layer
     )
 
-    model = SOPImageCls4(config, wrapped_backbone_model, 
+    model = SOPImageCls4(config, backbone_model, #wrapped_backbone_model, 
                         class_weights=class_weights, 
                         projection_layer=projection_layer)
     if sop_model_name is not None:

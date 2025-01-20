@@ -11,7 +11,8 @@ import torch
 
 WrappedBackboneOutput = namedtuple("WrappedBackboneOutput", 
                                   ["logits",
-                                   "pooler_output"])
+                                   "pooler_output",
+                                   "hidden_states"])
 
 
 class WrappedModel(nn.Module):
@@ -22,10 +23,12 @@ class WrappedModel(nn.Module):
         self.output_type = output_type
         self.num_patch = num_patch
     
-    def forward(self, inputs):
-        outputs = self.model(inputs, output_hidden_states=True)
+    def forward(self, inputs, **kwargs):
+        kwargs['output_hidden_states'] = True
+        outputs = self.model(inputs, **kwargs)
         if self.output_type == 'tuple':
-            return WrappedBackboneOutput(outputs.logits, outputs.hidden_states[-1][:,0])
+            return WrappedBackboneOutput(outputs.logits, outputs.hidden_states[-1][:,0],
+                                         outputs.hidden_states)
         elif self.output_type == 'logits':
             return outputs.logits
         else: # hidden_states
@@ -34,10 +37,13 @@ class WrappedModel(nn.Module):
             return outputs.hidden_states[-2][:,1:].transpose(1,2).reshape(-1, 
                             hidden_size, self.num_patch, self.num_patch)
 
-def get_wrapped_models(model, config):
+def get_wrapped_models(model, config, wrap_proj=False):
     wrapped_model = WrappedModel(model, output_type='tuple')
     class_weights = get_chained_attr(wrapped_model, config.finetune_layers[0]).weight #.clone().to(device)
-    projection_layer = WrappedModel(model, output_type='hidden_states')
+    if wrap_proj:
+        projection_layer = WrappedModel(wrapped_model, output_type='hidden_states')
+    else:
+        projection_layer = WrappedModel(model, output_type='hidden_states')
     return wrapped_model, class_weights, projection_layer
 
 def get_wrapped_model(model, config):
@@ -50,6 +56,7 @@ def get_model(
     backbone_processor_name='google/vit-base-patch16-224',
     sop_model_name='/shared_data0/weiqiuy/sop/exps/imagenet_lr5e-06_tgtnnz0.2_gg0.0600_gs0.0100_ft_identify_fixk_scratch_ks3/best',
     eval_mode=False,
+    wrap_proj=False
     ):
     if model_type == 'vit':
         backbone_model = AutoModelForImageClassification.from_pretrained(backbone_model_name)
@@ -61,7 +68,8 @@ def get_model(
         config.num_labels = len(backbone_config.id2label)
         wrapped_backbone_model, class_weights, projection_layer = get_wrapped_models(
             backbone_model,
-            config
+            config,
+            wrap_proj=wrap_proj
         )
         model = SOPImageCls4(config, wrapped_backbone_model, 
                             class_weights=class_weights, 

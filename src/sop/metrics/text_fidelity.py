@@ -10,25 +10,29 @@ def get_all_fidelity_text(dataloader, original_model, original_model_softmax, ba
                      reduction='none', skip=False, progress_bar=True, save_dir=None):
     # explainer = get_explainer(original_model, backbone_model,
     #                                 explainer_name, device)
+    print('len(dataloader)', len(dataloader))
     explainer = get_explainer(original_model, original_model_softmax, 
                             backbone_model, processor, explainer_name, device)
     
     if save_dir is not None:
         os.makedirs(save_dir, exist_ok=True)
+        
     fids = []
     for bi, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
+        
+        if skip and bi >= 50: #% 10 != 1:
+            break
         
         if save_dir is not None:
             save_path = os.path.join(save_dir, f'{bi}.pt')
             if os.path.exists(save_path):
-                # results = torch.load(save_path)
-                # fids.append(results['fid'])
+                results = torch.load(save_path)
+                fids.append(results['fid'])
                 continue
         else:
             save_path = None
 
-        if skip and bi >= 50: #% 10 != 1:
-            break
+        
             # if bi >= 10:
             #     break
             # continue
@@ -63,21 +67,30 @@ def get_all_fidelity_text(dataloader, original_model, original_model_softmax, ba
         labels = batch['label'].to(device)
 
         bsz = inputs.shape[0]
-        
+
+        if explainer_name == 'archipelago':
+            # trunk all inputs to only top 10 tokens.
+            inputs = inputs[:, :10]
+            attention_mask = attention_mask[:, :10]
+            token_type_ids = token_type_ids[:, :10]
+            kwargs['attention_mask'] = attention_mask
+            kwargs['token_type_ids'] = token_type_ids
+
         expln, probs = get_expln_all_classes(original_model,
                                             inputs, explainer, 
                                             num_classes, 
                                             explainer_name,
                                             processor,
                                             kwargs=kwargs) #val_config['model']['num_classes']
+        
         if len(fids) == 0:
             print('len(expln)', len(expln))
         # import pdb; pdb.set_trace()
 
         fid = fidelity(expln, probs)
 
-        if save_dir is not None:
-            save_path = os.path.join(save_dir, f'{bi}.pt')#save_dir / f'{bi}.pt'
+        if save_path is not None and not os.path.exists(save_path):
+            # save_path = os.path.join(save_dir, f'{bi}.pt')#save_dir / f'{bi}.pt'
             results = {
                 'expln': expln,
                 'probs': probs,

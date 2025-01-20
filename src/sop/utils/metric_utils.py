@@ -59,3 +59,15 @@ def get_prob_obj_coverage(masks, segs, reduction='mean', eps=1e-20):
     ratios = (intersection.sum(-1).sum(-1) + eps) / \
             (segs_bool.sum(-1).sum(-1)[:,None] + eps * intersection.shape[0])
     return ratios
+
+def get_iou(masks, segs, reduction='mean', eps=1e-20):
+    """
+    masks (M, H, W)
+    segs (1, H, W)
+    """
+    segs_bool = (segs == 1).float()
+    intersection = masks[:,None] * segs_bool
+    union = (masks[:,None] + segs_bool).bool().float()
+    ratios = (intersection.sum(-1).sum(-1) + eps) / \
+            (segs_bool.sum(-1).sum(-1)[:,None] + eps * intersection.shape[0])
+    return ratios

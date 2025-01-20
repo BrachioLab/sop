@@ -6,7 +6,11 @@ class CosmogridConfig(BaseConfig):
         self._config = {
             'dataset': {
                 'name': 'cosmogrid',
-                'root': '/shared_data0/weiqiuy/datasets/cosmogrid'
+                'root': '/shared_data0/weiqiuy/datasets/cosmogrid',
+                'image_size': 66,
+                'patch_size': 6,
+                'num_patches': 11,
+                'num_classes': 2,
             },
             'training': {
                 'batch_size': 16,

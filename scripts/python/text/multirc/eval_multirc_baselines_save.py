@@ -125,7 +125,7 @@ class SSTDataset(Dataset):
         return inputs
 
 EXPLAINER_NAMES = ['lime', 'archipelago', 'rise', 'shap', 'intgrad', 'idg', 'pls',
-                'attn']
+                'attn', 'mfaba', 'agi', 'ampe', 'fullgrad', 'gradcam']
 # EXPLAINER_NAMES = ['lime', 'rise', 'shap', 'intgrad']
 
 if __name__ == '__main__':
@@ -148,7 +148,7 @@ if __name__ == '__main__':
         kernel_width = -1
 
     if explainer_name not in EXPLAINER_NAMES:
-        raise ValueError('Invalid explainer name' + explainer_name)
+        raise ValueError('Invalid explainer name ' + explainer_name)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
