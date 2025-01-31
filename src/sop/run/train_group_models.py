@@ -6,6 +6,7 @@ import torchvision.transforms as transforms
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 from tqdm.auto import tqdm
 import os
+import wandb
 
 
 
@@ -135,7 +136,7 @@ class WrappedViT(nn.Module):
         return self.vit_cls(x).logits
 
 # Training function
-def train_model(model, train_loader, criterion, optimizer, device, debug=False):
+def train_model(model, train_loader, criterion, optimizer, device, debug=False, track=False):
     model.train()
     running_loss = 0.0
     correct = 0
@@ -164,10 +165,12 @@ def train_model(model, train_loader, criterion, optimizer, device, debug=False):
 
     accuracy = 100.0 * correct / total
     avg_loss = running_loss / len(train_loader)
+    if track:
+        wandb.log({"train_loss": avg_loss, "train_accuracy": accuracy})
     return avg_loss, accuracy
 
 # Evaluation function
-def evaluate_model(model, val_loader, criterion, device):
+def evaluate_model(model, val_loader, criterion, device, track=False):
     model.eval()
     val_loss = 0.0
     correct = 0
@@ -186,9 +189,24 @@ def evaluate_model(model, val_loader, criterion, device):
 
     accuracy = 100.0 * correct / total
     avg_loss = val_loss / len(val_loader)
+    if track:
+        wandb.log({"val_loss": avg_loss, "val_accuracy": accuracy})
     return avg_loss, accuracy
 
-def run(bin_masks_pt, labels_all_pt, model_type='cnn', lr=0.001, num_epochs=20, debug=False):
+def run(bin_masks_pt, labels_all_pt, model_type='cnn', lr=0.001, num_epochs=20, debug=False, seed=0, track=False):
+    if track:
+        # wandb.init(project='sop', entity='weiqiuy', name=f'train_group_models_{method}')
+        wandb.init(
+        project="sop",
+        name=f"groups-{method}-{model_type}",
+        config={
+            "method": method,
+            "learning_rate": lr,
+            "num_epochs": num_epochs,
+            "debug": debug,
+            "model_types": model_types,
+        }
+    )
     # Hyperparameters
     batch_size = 64
     # num_epochs = 20
@@ -202,7 +220,13 @@ def run(bin_masks_pt, labels_all_pt, model_type='cnn', lr=0.001, num_epochs=20, 
     # Split dataset into training and validation sets
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+
+    train_dataset, val_dataset = random_split(dataset=dataset,
+                                    lengths=[train_size, val_size],
+                                    generator=generator)
+
 
     # Data loaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -227,15 +251,16 @@ def run(bin_masks_pt, labels_all_pt, model_type='cnn', lr=0.001, num_epochs=20, 
     pbar = tqdm(range(num_epochs))
     for epoch in pbar:
         pbar.set_description(f'Epoch {epoch}')
-        train_loss, train_accuracy = train_model(model, train_loader, criterion, optimizer, device, debug)
-        val_loss, val_accuracy = evaluate_model(model, val_loader, criterion, device)
+        train_loss, train_accuracy = train_model(model, train_loader, criterion, optimizer, device, debug, track=track)
+        val_loss, val_accuracy = evaluate_model(model, val_loader, criterion, device, track=track)
 
         print(f"Epoch [{epoch + 1}/{num_epochs}]")
         print(f"  Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.2f}%")
         print(f"  Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.2f}%")
 
-    print("Training complete.")
-    
+    print(f"Training complete for {model_type}.")
+    wandb.finish()  # Finish the wandb run for this model
+
     return model
 
 
@@ -248,6 +273,8 @@ def main():
         parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
         parser.add_argument('--num_epochs', type=int, default=20, help='Number of epochs')
         parser.add_argument('--debug', action='store_true', help='Debug mode')
+        parser.add_argument('--track', action='store_true', help='track')
+        
         return parser.parse_args()
 
     args = parse_args()
@@ -255,6 +282,10 @@ def main():
     lr = args.lr
     num_epochs = args.num_epochs
     debug = args.debug
+    track = args.track
+
+    
+
 
     methods = [
         'bcos',
@@ -285,8 +316,8 @@ def main():
         model_types = ['linear_patch', 'cnn', 'vit']
 
     # method = 'agi'
-    # results_dir = f'/shared_data0/weiqiuy/sop/results/groups/imagenet_expln_d1000_m990/{method}'
-    results_dir = f'/scratch/weiqiuy/sop/results/groups/imagenet_expln_d1000_m990/{method}'
+    results_dir = f'/shared_data0/weiqiuy/sop/results/groups/imagenet_expln_d1000_m990/{method}'
+    # results_dir = f'/scratch/weiqiuy/sop/results/groups/imagenet_expln_d1000_m990/{method}'
 
     bin_masks_pt = []
     labels_all_pt = []
@@ -306,10 +337,13 @@ def main():
     models = {}
     for model_type in model_types:
         print('model_type', model_type)
-        model = run(bin_masks_pt, labels_all_pt, model_type=model_type, lr=lr, num_epochs=num_epochs, debug=debug)
+        model = run(bin_masks_pt, labels_all_pt, model_type=model_type, lr=lr, num_epochs=num_epochs, debug=debug, track=track)
         models[model_type] = model
 
-    group_models_dir = '/shared_data0/weiqiuy/sop/results/groups/models'
+    if num_epochs == 20:
+        group_models_dir = '/shared_data0/weiqiuy/sop/results/groups/models'
+    else:
+        group_models_dir = f'/shared_data0/weiqiuy/sop/results/groups/models_{num_epochs}'
     os.makedirs(group_models_dir, exist_ok=True)
     group_models_dir_method = f'{group_models_dir}/{method}'
     os.makedirs(group_models_dir_method, exist_ok=True)

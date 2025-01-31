@@ -1,4 +1,4 @@
-for EXPLAINER_NAME in ampe agi attn mfaba # intgrad gradcam xdnn bcos
+for EXPLAINER_NAME in intgrad gradcam xdnn bcos ampe agi  #  mfaba attn
 do
     echo "Running $EXPLAINER_NAME"
     python /shared_data0/weiqiuy/sop/src/sop/run/train_group_models.py --method "$EXPLAINER_NAME" --lr 0.001 --num_epochs 20
