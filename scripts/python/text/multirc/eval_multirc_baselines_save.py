@@ -26,6 +26,7 @@ from exlib.explainers.intgrad import IntGradTextCls
 from exlib.explainers.archipelago import ArchipelagoTextCls
 from exlib.explainers.idg import IDGTextCls
 from exlib.explainers.pls import PLSTextCls
+from exlib.explainers.attn import AttnTextCls
 
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
@@ -33,6 +34,10 @@ from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset
 from PIL import Image
 import jsonlines
+
+sys.path.append('src')
+
+from sop.tasks.texts.base.explns import get_explainer, get_attr_from_explainer
 
 
 from collections import namedtuple
@@ -119,7 +124,8 @@ class SSTDataset(Dataset):
         inputs['label'] = self.labels[idx]
         return inputs
 
-EXPLAINER_NAMES = ['lime', 'archipelago', 'rise', 'shap', 'intgrad', 'idg', 'pls']
+EXPLAINER_NAMES = ['lime', 'archipelago', 'rise', 'shap', 'intgrad', 'idg', 'pls',
+                'attn', 'mfaba', 'agi', 'ampe', 'fullgrad', 'gradcam']
 # EXPLAINER_NAMES = ['lime', 'rise', 'shap', 'intgrad']
 
 if __name__ == '__main__':
@@ -142,7 +148,7 @@ if __name__ == '__main__':
         kernel_width = -1
 
     if explainer_name not in EXPLAINER_NAMES:
-        raise ValueError('Invalid explainer name' + explainer_name)
+        raise ValueError('Invalid explainer name ' + explainer_name)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -392,49 +398,11 @@ if __name__ == '__main__':
     # model = model.to(device)
     # model.eval();
        
+    original_model_softmax = original_model2
+    explainer = get_explainer(original_model, original_model_softmax, backbone_model, processor, 
+                  explainer_name, device, num_samples=20, 
+                  kernel_width=15)
 
-    if explainer_name == 'lime':
-        eik = {
-            "top_labels": 2, 
-            "num_samples": num_samples
-        }
-
-        def split_expression(x):
-            tokens = x.split()
-            return tokens
-            
-        ltek = {
-            "mask_string": "[MASK]",
-            "split_expression": split_expression
-        }
-
-        explainer = LimeTextCls(original_model, processor,
-                                LimeTextExplainerKwargs=ltek,
-                                explain_instance_kwargs=eik).to(device)
-    elif explainer_name == 'shap':
-        sek = {'max_evals': num_samples}
-        explainer = ShapTextCls(original_model, processor, shap_explainer_kwargs=sek).to(device)
-    elif explainer_name == 'rise':
-        if kernel_width == -1:
-            explainer = RiseTextCls(original_model2, N=num_samples).to(device)
-        else:
-            import math
-            explainer = RiseTextCls(
-                original_model2, 
-                N=num_samples,
-                s=math.ceil(512/kernel_width)
-                ).to(device)
-    elif explainer_name == 'intgrad':
-        explainer = IntGradTextCls(original_model2, projection_layer=projection_layer, num_steps=num_samples).to(device)
-    elif explainer_name == 'archipelago':
-        explainer = ArchipelagoTextCls(backbone_model).to(device)
-    elif explainer_name == 'idg':
-        explainer = IDGTextCls(original_model3, processor).to(device)
-    elif explainer_name == 'pls':
-        explainer = PLSTextCls(backbone_model, processor).to(device)
-    else:
-        raise ValueError('Invalid explainer name' + explainer_name)
-    
     explainer = explainer.to(device)
         
     consistents = 0
@@ -455,21 +423,30 @@ if __name__ == '__main__':
     count = 0
 
     for batch in tqdm(dataloader):
+       
         if not isinstance(batch['input_ids'], torch.Tensor):
-            inputs = torch.stack(batch['input_ids']).transpose(0, 1).to(device)
+            inputs = torch.stack(batch['input_ids']).transpose(0, 1)
             if 'token_type_ids' in batch:
-                token_type_ids = torch.stack(batch['token_type_ids']).transpose(0, 1).to(device)
+                token_type_ids = torch.stack(batch['token_type_ids']).transpose(0, 1)
             else:
                 token_type_ids = None
-            attention_mask = torch.stack(batch['attention_mask']).transpose(0, 1).to(device)
+            attention_mask = torch.stack(batch['attention_mask']).transpose(0, 1)
 
         else:
-            inputs = batch['input_ids'].to(device)
+            inputs = batch['input_ids']
             if 'token_type_ids' in batch:
-                token_type_ids = batch['token_type_ids'].to(device)
+                token_type_ids = batch['token_type_ids']
             else:
                 token_type_ids = None
-            attention_mask = batch['attention_mask'].to(device)
+            attention_mask = batch['attention_mask']
+        
+        bsz = inputs.shape[0]
+        if os.path.exists(os.path.join(expln_dir, f'{count}.pt')):
+            count += bsz
+            continue
+        
+        inputs, attention_mask, token_type_ids = inputs.to(device), attention_mask.to(device), token_type_ids.to(device)
+
 
         kwargs = {
             'token_type_ids': token_type_ids,
@@ -481,26 +458,16 @@ if __name__ == '__main__':
             'attention_mask': attention_mask
         }
         labels = batch['label'].to(device)
-        bsz = inputs.shape[0]
+        
+
+        
+
         with torch.no_grad():
             logits = original_model(**inputs_dict)
             preds = torch.argmax(logits, dim=-1)
 
-            if explainer_name in ['lime']:
-                expln = explainer(inputs, preds)
-            elif explainer_name in ['shap', 'idg']:
-                inputs_raw = [processor.decode(input_ids_i).replace('[CLS]', '').replace('[PAD]', '').strip() 
-                            for input_ids_i in inputs]
-
-                expln = explainer(inputs_raw, preds)
-            elif explainer_name in ['rise']:
-                expln = explainer(inputs, preds, kwargs=kwargs)
-            elif explainer_name in ['intgrad']:
-                expln = explainer(inputs, preds, x_kwargs=kwargs)
-            elif explainer_name in ['archipelago', 'pls']:
-                expln = explainer(inputs, preds, **kwargs)
-            else:
-                raise ValueError('Invalid explainer name' + explainer_name)
+            expln = get_attr_from_explainer(explainer, explainer_name, inputs, preds, processor, 
+                    kwargs=kwargs, device=device, return_expln=True)
 
             aggr_preds = []
             explns = []

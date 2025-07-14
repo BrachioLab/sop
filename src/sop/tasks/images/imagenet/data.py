@@ -188,7 +188,7 @@ def get_dataset(dataset_name, split='val', num_data=-1, start_data=0, batch_size
     if dataset_name == 'imagenet':
         TRAIN_DATA_DIR = '/scratch/datasets/imagenet/train'
         VAL_DATA_DIR = '/scratch/datasets/imagenet/val'
-        if split == 'train':
+        if split == 'train': # train data is always augmented
             dataset = ImageFolderSubDataset(TRAIN_DATA_DIR, 
                                             transform=lambda x: transform_aug(x, processor=processor), 
                                             num_data=num_data,

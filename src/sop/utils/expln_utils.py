@@ -1,10 +1,10 @@
 from exlib.explainers.archipelago import ArchipelagoImageCls
 from exlib.explainers.lime import LimeImageCls
 from exlib.explainers.common import patch_segmenter
-from exlib.explainers import ShapImageCls
-from exlib.explainers import RiseImageCls
-from exlib.explainers import IntGradImageCls
-from exlib.explainers import GradCAMImageCls
+from exlib.explainers.shap import ShapImageCls
+from exlib.explainers.rise import RiseImageCls
+from exlib.explainers.intgrad import IntGradImageCls
+from exlib.explainers.gradcam import GradCAMImageCls
 from exlib.explainers.fullgrad import FullGradImageCls
 from exlib.explainers.attn import AttnImageCls
 import torch

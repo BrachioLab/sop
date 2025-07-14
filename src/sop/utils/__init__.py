@@ -13,6 +13,8 @@ from .model_utils import set_grad_model
 from .general_utils import seed_all
 from .metric_utils import fidelity
 from .expln_utils import get_explainer, get_expln_all_classes
+from .text_utils import map_token_spans_to_original_text
+from .eval_utils import bootstrap
 
 __all__ = [
     'get_dataset', 
