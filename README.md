@@ -1,8 +1,8 @@
-# Sum-of-Parts (SOP) Models: Faithful Attributions for Groups of Features
+# Sum-of-Parts: Self-Attributing Neural Networks with End-to-End Learning of Feature Groups
 
 \[[Paper](https://arxiv.org/abs/2310.16316)\] \[[Blog](https://debugml.github.io/sum-of-parts/)\]
 
-Official implementation for "Sum-of-Parts: Faithful Attributions for Groups of Features".
+Official implementation for "Sum-of-Parts: Self-Attributing Neural Networks with End-to-End Learning of Feature Groups".
 
 Authors: Weiqiu You, Helen Qu, Marco Gatti, Bhuvnesh Jain, Eric Wong
 
@@ -45,13 +45,12 @@ Here we show how we evaluate. The actual scripts we run are in `src/sop/run`.
 
 ## Citation
 ```
-@misc{you2024sumofpartsfaithfulattributionsgroups,
-      title={Sum-of-Parts: Faithful Attributions for Groups of Features}, 
+@inproceedings{
+      you2025sumofparts,
+      title={Sum-of-Parts: Self-Attributing Neural Networks with End-to-End Learning of Feature Groups},
       author={Weiqiu You and Helen Qu and Marco Gatti and Bhuvnesh Jain and Eric Wong},
-      year={2024},
-      eprint={2310.16316},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2310.16316}, 
+      booktitle={Forty-second International Conference on Machine Learning},
+      year={2025},
+      url={https://openreview.net/forum?id=r6y9TEdLMh}
 }
 ```
